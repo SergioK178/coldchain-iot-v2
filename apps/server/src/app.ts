@@ -16,6 +16,7 @@ import { deviceRoutes } from './routes/devices.js';
 import { readingsRoutes } from './routes/readings.js';
 import { alertRulesRoutes } from './routes/alert-rules.js';
 import { alertEventsRoutes } from './routes/alert-events.js';
+import { staticPlugin } from './plugins/static.js';
 
 // Extend Fastify with custom properties
 declare module 'fastify' {
@@ -84,6 +85,9 @@ export async function buildApp(env: Env, adminPasswordHash: string) {
   await app.register(readingsRoutes);
   await app.register(alertRulesRoutes);
   await app.register(alertEventsRoutes);
+
+  // Static UI (must be last — has setNotFoundHandler)
+  await app.register(staticPlugin);
 
   return app;
 }
