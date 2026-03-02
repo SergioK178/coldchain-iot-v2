@@ -1,2 +1,4 @@
-// @sensor/db — re-exports
-export {} // placeholder
+export * from './schema.js';
+export { createDb, type Db } from './client.js';
+export { runMigrations } from './migrate.js';
+export { seed } from './seed.js';
