@@ -457,22 +457,23 @@ export const MQTT = {
 | P9 | Decommission: `DELETE /api/v1/devices/:serial` устанавливает `decommissionedAt`, затем запускает full rebuild `passwd`/`acl` и reload Mosquitto. Исторические readings и alert events сохраняются |
 | P10 | Audit log: `device.provisioned`, `device.decommissioned` |
 | P11 | Provision/decommission считается успешным только если: БД записана, `passwd/acl` пересобраны, reload Mosquitto выполнен. Если любой шаг после БД не удался — API возвращает 500; система остаётся восстановимой через reconcile при следующем старте/следующей успешной операции |
+| P12 | Для устранения edge-case после частичного сбоя: каждый `POST /api/v1/devices/provision` обязан выполнять reconcile `passwd`/`acl` до проверки конфликта serial. При `DEVICE_ALREADY_PROVISIONED` сервер возвращает 409 уже после reconcile |
 
 **Файловая механика Mosquitto credentials:**
 
 ```
 # Bind mounts в docker-compose:
-# Host: ./data/mosquitto/passwd   → Container: /mosquitto/config/passwd
-# Host: ./data/mosquitto/acl      → Container: /mosquitto/config/acl
+# Host: ./data/mosquitto          → Container (mqtt):   /mosquitto/config/runtime
 #
-# Server container тоже монтирует эти файлы (тот же host path):
-# Host: ./data/mosquitto/passwd   → Container: /mosquitto-data/passwd
-# Host: ./data/mosquitto/acl      → Container: /mosquitto-data/acl
+# Server container тоже монтирует ту же директорию:
+# Host: ./data/mosquitto          → Container (server): /mosquitto-data
 #
 # Server не редактирует файлы построчно.
 # Server пересобирает passwd/acl из БД устройств + admin user из env
 # целиком (tmp + atomic rename),
 # затем шлёт SIGHUP → Mosquitto перечитывает.
+# Временные файлы и целевые файлы находятся в одном mounted directory,
+# чтобы `rename()` был truly atomic.
 ```
 
 ### 8.3 Alerting
@@ -626,7 +627,7 @@ Response 201:
 Ошибки:
 - 400 `INVALID_SERIAL_FORMAT` — serial не прошёл regex
 - 400 `UNKNOWN_DEVICE_TYPE` — тип из serial не в `DEVICE_TYPES`
-- 409 `DEVICE_ALREADY_PROVISIONED` — serial уже зарегистрирован
+- 409 `DEVICE_ALREADY_PROVISIONED` — serial уже зарегистрирован (reconcile `passwd/acl` выполняется до ответа 409)
 - 404 `ZONE_NOT_FOUND` — если zoneId указан, но не существует
 
 Поведение `zoneId`:
@@ -649,7 +650,6 @@ Response 200:
       "zoneName": "Кухня",
       "locationName": "Ресторан Берёзка",
       "powerSource": "battery",
-      "isOnline": true,
       "lastSeenAt": "2025-07-15T14:30:00Z",
       "lastTemperatureC": -18.3,
       "lastHumidityPct": 45.2,
@@ -664,6 +664,7 @@ Response 200:
 
 `connectivityStatus`: `"online"` или `"offline"` (связность устройства).
 `alertStatus`: `"normal"` — нет неподтверждённых alert events, `"alert"` — есть хотя бы один unacknowledged alert event.
+`isOnline` остаётся внутренним полем БД и в API-контракт P1 не выводится.
 
 Decommissioned устройства не возвращаются.
 
@@ -901,9 +902,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-      - ./data/mosquitto/passwd:/mosquitto/config/passwd
-      - ./data/mosquitto/acl:/mosquitto/config/acl
-      - ./data/mosquitto/data:/mosquitto/data
+      - ./data/mosquitto:/mosquitto/config/runtime
     ports:
       - "${MQTT_PORT:-1883}:1883"
 
@@ -922,8 +921,7 @@ services:
       ALERT_CALLBACK_URL: ${ALERT_CALLBACK_URL:-}
       DEVICE_OFFLINE_TIMEOUT_SEC: ${DEVICE_OFFLINE_TIMEOUT_SEC:-300}
     volumes:
-      - ./data/mosquitto/passwd:/mosquitto-data/passwd
-      - ./data/mosquitto/acl:/mosquitto-data/acl
+      - ./data/mosquitto:/mosquitto-data
       - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
       - "${HTTP_PORT:-8080}:8080"
@@ -992,11 +990,11 @@ listener 1883
 protocol mqtt
 
 allow_anonymous false
-password_file /mosquitto/config/passwd
-acl_file /mosquitto/config/acl
+password_file /mosquitto/config/runtime/passwd
+acl_file /mosquitto/config/runtime/acl
 
 persistence true
-persistence_location /mosquitto/data/
+persistence_location /mosquitto/config/runtime/data/
 
 log_dest stdout
 log_type warning
@@ -1094,7 +1092,7 @@ sensor-platform/
 │           │   ├── ingestion.ts        # I1–I9
 │           │   ├── device.ts
 │           │   ├── alert.ts            # A1–A8
-│           │   ├── provision.ts        # P1–P11
+│           │   ├── provision.ts        # P1–P12
 │           │   └── audit.ts            # AU1–AU4
 │           └── lib/
 │               ├── mosquitto-files.ts  # Read/write passwd + ACL files
@@ -1190,7 +1188,7 @@ sensor-platform/
 [ ] Seed создаёт organization + location + zone при первом запуске
 [ ] Mosquitto: allow_anonymous false, password_file, ACL
 [ ] Provision API: создаёт device + MQTT credentials + full rebuild passwd/ACL из БД + SIGHUP
-[ ] Startup reconcile: server всегда пересобирает passwd/ACL из БД
+[ ] Startup reconcile: server всегда пересобирает passwd/ACL из БД устройств + admin user из env
 [ ] Ingestion: подписка на d/+/t, парсинг, валидация по DevicePayloadSchema
 [ ] Ingestion: отклонение незарегистрированных устройств + audit log
 [ ] Ingestion: capability validation (обязательные поля для типа)
