@@ -227,6 +227,8 @@ export const devices = pgTable('devices', {
   provisionedAt: timestamp('provisioned_at', { withTimezone: true }).defaultNow(),
   decommissionedAt: timestamp('decommissioned_at', { withTimezone: true }),
   mqttUsername: varchar('mqtt_username', { length: 100 }).notNull().unique(),
+  // Хранится hash в формате, совместимом с Mosquitto password_file
+  // (sha512-pbkdf2 preferred), чтобы возможен был full rebuild passwd из БД.
   mqttPasswordHash: varchar('mqtt_password_hash', { length: 255 }).notNull(),
 });
 
@@ -447,10 +449,10 @@ export const MQTT = {
 | P1 | Устройство регистрируется через `POST /api/v1/devices/provision` |
 | P2 | Сервер валидирует формат serial, извлекает device type |
 | P3 | Сервер генерирует уникальные MQTT credentials: `mqtt_username` = `dev_{serial_lowercase}`, `mqtt_password` = cryptographically random 32-char string |
-| P4 | Password hash записывается в `devices.mqttPasswordHash` (bcrypt) |
+| P4 | Password hash записывается в `devices.mqttPasswordHash` в формате, совместимом с Mosquitto `password_file` (предпочтительно `sha512-pbkdf2`, допускается `sha512`) |
 | P5 | Канонический источник правды для MQTT credentials — БД (`devices`). `passwd` и `acl` — производные артефакты для Mosquitto |
-| P6 | После каждого provision/decommission сервер полностью пересобирает `passwd` и `acl` из активных устройств в БД: пишет во временные файлы, делает atomic rename, затем отправляет reload (SIGHUP) в Mosquitto |
-| P7 | Сервер при старте всегда выполняет reconcile: полная пересборка `passwd`/`acl` из БД, даже если файлы уже существуют |
+| P6 | После каждого provision/decommission сервер полностью пересобирает `passwd` и `acl` из активных устройств в БД + admin MQTT user из env: пишет во временные файлы, делает atomic rename, затем отправляет reload (SIGHUP) в Mosquitto |
+| P7 | Сервер при старте всегда выполняет reconcile: полная пересборка `passwd`/`acl` из БД устройств + admin MQTT user из env, даже если файлы уже существуют |
 | P8 | Ответ API содержит plaintext `mqtt_password` (один раз). После этого plaintext не хранится нигде |
 | P9 | Decommission: `DELETE /api/v1/devices/:serial` устанавливает `decommissionedAt`, затем запускает full rebuild `passwd`/`acl` и reload Mosquitto. Исторические readings и alert events сохраняются |
 | P10 | Audit log: `device.provisioned`, `device.decommissioned` |
@@ -468,7 +470,8 @@ export const MQTT = {
 # Host: ./data/mosquitto/acl      → Container: /mosquitto-data/acl
 #
 # Server не редактирует файлы построчно.
-# Server пересобирает passwd/acl из БД целиком (tmp + atomic rename),
+# Server пересобирает passwd/acl из БД устройств + admin user из env
+# целиком (tmp + atomic rename),
 # затем шлёт SIGHUP → Mosquitto перечитывает.
 ```
 
@@ -492,7 +495,7 @@ export const MQTT = {
 | # | Требование |
 |---|---|
 | AU1 | Таблица `audit_log` — append-only. Application code содержит только `insert` и `select`. Нет `update`, `delete`, `upsert` |
-| AU2 | Actions в P1: `device.provisioned`, `device.decommissioned`, `device.online`, `device.offline`, `device.unknown_message`, `alert.triggered`, `alert.acknowledged`, `payload.invalid`, `payload.missing_capability`, `config.changed` |
+| AU2 | Actions в P1: `device.provisioned`, `device.decommissioned`, `device.online`, `device.offline`, `device.unknown_message`, `alert.triggered`, `alert.acknowledged`, `alert_rule.created`, `alert_rule.updated`, `alert_rule.deleted`, `payload.invalid`, `payload.missing_capability`, `config.changed` |
 | AU3 | `actor`: для mutating endpoints (кроме acknowledge) — `?actor=...` или `"system"` по умолчанию; для acknowledge actor берётся из обязательного `acknowledgedBy` |
 | AU4 | `details`: JSON с контекстом. Для `device.unknown_message` — serial + raw payload. Для `alert.triggered` — reading value + threshold. Формат details не стандартизирован, но каждый action type должен иметь предсказуемую структуру |
 
@@ -524,9 +527,9 @@ export const MQTT = {
 |---|---|
 | S11 | PostgreSQL credentials задаются через `.env`, не дефолтные |
 | S12 | `.env.example` не содержит реальных значений, только placeholder-комментарии |
-| S13 | Docker volumes для персистентности `db_data` и `mosquitto_data` |
+| S13 | Персистентность обеспечивается bind mounts в `./data/...` на хосте клиента (`./data/postgres`, `./data/mosquitto/...`) |
 | S14 | Документация содержит раздел backup/restore с конкретными командами `pg_dump` / `pg_restore` |
-| S15 | MQTT passwords в password file — в Mosquitto hashed format (через `mosquitto_passwd -b`) |
+| S15 | MQTT passwords в `password_file` и в `devices.mqttPasswordHash` хранятся в Mosquitto-compatible hashed format (`sha512-pbkdf2` preferred; допускается `sha512`) |
 
 **P1 exception (privileged):**
 
@@ -755,6 +758,7 @@ Request:
 Валидация: `metric` должен соответствовать capabilities типа устройства. Нельзя создать правило на `humidity_pct` для `SENS-TP-*`.
 
 Response 201: созданное правило с `id`.
+Audit log: `alert_rule.created`.
 
 ---
 
@@ -767,12 +771,14 @@ Response 200: массив правил.
 #### `PATCH /api/v1/alert-rules/:id`
 
 Обновление `threshold`, `operator`, `isActive`, `cooldownMinutes`.
+Audit log: `alert_rule.updated`.
 
 ---
 
 #### `DELETE /api/v1/alert-rules/:id`
 
 Hard delete.
+Audit log: `alert_rule.deleted`.
 
 ---
 
@@ -1005,7 +1011,7 @@ log_type error
 3. Seed: создаётся одна organization, одна location, одна zone (`Default Zone`, в русской локализации допускается `Основная зона`)
 4. В поставке уже есть пустые файлы `deploy/data/mosquitto/passwd` и `deploy/data/mosquitto/acl` (часть артефакта)
 5. Mosquitto стартует, читая эти файлы; server не создаёт путь с нуля
-6. Server выполняет reconcile и пересобирает `passwd`/`acl` из БД (включая admin MQTT user), затем отправляет reload Mosquitto
+6. Server выполняет reconcile и пересобирает `passwd`/`acl` из БД устройств + admin MQTT user из env, затем отправляет reload Mosquitto
 7. Server подключается к Mosquitto как admin, подписывается на `d/+/t` и `d/+/s`
 8. UI доступен на `http://{host}:{HTTP_PORT}`
 9. Swagger UI доступен на `http://{host}:{HTTP_PORT}/api/docs`
