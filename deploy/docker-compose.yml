@@ -1,0 +1,46 @@
+services:
+  db:
+    image: timescale/timescaledb:2.17.2-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${DB_NAME:-sensors}"
+      POSTGRES_USER: "${DB_USER:-sensors}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD:?error: set DB_PASSWORD in .env}"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-sensors}"]
+      interval: 5s
+      retries: 5
+
+  mqtt:
+    image: eclipse-mosquitto:2.0.20
+    restart: unless-stopped
+    volumes:
+      - ./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./data/mosquitto:/mosquitto/config/runtime
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+
+  server:
+    image: ghcr.io/your-org/sensor-server:0.1.0
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+      mqtt: { condition: service_started }
+    environment:
+      DATABASE_URL: "postgresql://${DB_USER:-sensors}:${DB_PASSWORD}@db:5432/${DB_NAME:-sensors}"
+      MQTT_URL: "mqtt://mqtt:1883"
+      MQTT_ADMIN_USER: "${MQTT_ADMIN_USER:-server}"
+      MQTT_ADMIN_PASSWORD: "${MQTT_ADMIN_PASSWORD:?error: set MQTT_ADMIN_PASSWORD in .env}"
+      API_TOKEN: "${API_TOKEN:?error: set API_TOKEN in .env}"
+      ALERT_CALLBACK_URL: "${ALERT_CALLBACK_URL:-}"
+      DEVICE_OFFLINE_TIMEOUT_SEC: "${DEVICE_OFFLINE_TIMEOUT_SEC:-300}"
+    volumes:
+      - ./data/mosquitto:/mosquitto-data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+
+volumes: {}
+# Все данные в ./data/ на хосте (bind mounts), не named volumes.

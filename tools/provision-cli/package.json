@@ -1,0 +1,13 @@
+{
+  "name": "@sensor/provision-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "provision": "tsx src/index.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "tsx": "^4.19.0"
+  }
+}
