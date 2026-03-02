@@ -4,7 +4,7 @@
 
 ## IoT Sensor Platform — Technical Master Specification
 
-**Version:** 3.0
+**Version:** 3.1
 **Status:** FROZEN — source of truth для P1
 **Scope:** Только P1. Всё за пределами P1 находится в разделе Backlog и не является частью спецификации.
 
@@ -235,7 +235,7 @@ export const devices = pgTable('devices', {
 export const readings = pgTable('readings', {
   deviceId: uuid('device_id').references(() => devices.id).notNull(),
   timestamp: timestamp('timestamp', { withTimezone: true }).notNull(),
-  messageId: varchar('message_id', { length: 64 }).notNull().unique(),
+  messageId: varchar('message_id', { length: 64 }).notNull(),
   temperatureC: real('temperature_c'),       // nullable: зависит от типа датчика
   humidityPct: real('humidity_pct'),          // nullable
   batteryPct: integer('battery_pct'),         // nullable: null если wired
@@ -243,7 +243,18 @@ export const readings = pgTable('readings', {
   rawPayload: text('raw_payload').notNull(),  // Оригинальный JSON до трансформаций
 });
 // После миграции: SELECT create_hypertable('readings', 'timestamp');
-// Уникальность обеспечивается UNIQUE на message_id
+// Индекс для API чтения:
+// CREATE INDEX readings_device_ts_idx ON readings (device_id, "timestamp" DESC);
+
+// --- ingestion_dedup ---
+// Обычная таблица (НЕ hypertable) для идемпотентной дедупликации сообщений
+export const ingestionDedup = pgTable('ingestion_dedup', {
+  deviceId: uuid('device_id').references(() => devices.id).notNull(),
+  messageId: varchar('message_id', { length: 64 }).notNull(),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).defaultNow(),
+}, (table) => ({
+  uqDeviceMessage: unique().on(table.deviceId, table.messageId),
+}));
 
 // --- alert_rules ---
 export const alertRules = pgTable('alert_rules', {
@@ -266,7 +277,7 @@ export const alertEvents = pgTable('alert_events', {
   triggeredAt: timestamp('triggered_at', { withTimezone: true }).defaultNow(),
   readingValue: real('reading_value').notNull(),
   thresholdValue: real('threshold_value').notNull(),
-  callbackSent: boolean('callback_sent').default(false),
+  callbackAttempted: boolean('callback_attempted').default(false),
   callbackResponseCode: integer('callback_response_code'),
   acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
   acknowledgedBy: varchar('acknowledged_by', { length: 255 }),  // Свободная строка, оператор вводит имя
@@ -316,7 +327,7 @@ export function parseSerial(serial: string): { type: DeviceTypeCode; number: str
 }
 ```
 
-Сервер при provisioning валидирует формат serial и извлекает из него device type. Отдельное поле `deviceType` в API и БД отсутствует.
+Сервер при provisioning валидирует формат serial и извлекает из него device type. Поле `deviceType` в API является вычисляемым (`derived from serial`), в БД не хранится.
 
 **Audit log — append-only.**
 
@@ -324,9 +335,9 @@ export function parseSerial(serial: string): { type: DeviceTypeCode; number: str
 
 **Actor в P1.**
 
-В P1 нет системы пользователей. Поле `actor` в audit log и `acknowledgedBy` в alert events заполняются одним из двух способов:
-- `"system"` — для автоматических действий (alert triggered, device went offline)
-- Строка, переданная клиентом в API-запросе через query-параметр `?actor=Иванов` или поле `acknowledgedBy` в теле запроса — для действий оператора
+В P1 нет системы пользователей. Единое правило:
+- Для всех mutating endpoints (`POST`, `PATCH`, `DELETE`), кроме acknowledge, поддерживается опциональный query-параметр `?actor=...`; если не передан — в audit пишется `"system"`.
+- Для `PATCH /api/v1/alert-events/:id/acknowledge` `acknowledgedBy` в body обязателен и это же значение используется как `actor` в audit log.
 
 Валидация: непустая строка, максимум 255 символов. Сервер не проверяет, кто это. Полноценная идентификация — BACKLOG P2.
 
@@ -364,7 +375,7 @@ export type DevicePayload = z.infer<typeof DevicePayloadSchema>;
 
 | Требование | Описание |
 |---|---|
-| `mid` уникальность | `mid` уникален глобально (device_id + counter или UUID). Сервер использует его для дедупликации |
+| `mid` уникальность | `mid` уникален в пределах одного устройства. Допустимые генераторы: monotonic counter per device или random/UUID-like id. Сервер дедуплицирует по паре `(serial, mid)` / `(deviceId, messageId)` |
 | Capability validation | Сервер после парсинга проверяет: если тип устройства (из serial) предполагает `temperature_c`, то поле `t` обязано присутствовать. Если тип не предполагает поля — оно игнорируется |
 | Timestamp | `ts` — UTC unix seconds. Сервер не корректирует. При отображении сортировка всегда по `ts` |
 | Размер | Максимум 512 байт JSON. Сообщения больше — отклоняются |
@@ -421,7 +432,7 @@ export const MQTT = {
 |---|---|
 | I1 | Каждое MQTT-сообщение в `d/+/t` валидируется по `DevicePayloadSchema`. Невалидные отклоняются, пишется audit log (`payload.invalid`) |
 | I2 | Serial из payload сверяется с таблицей `devices`. Незарегистрированные отклоняются, пишется audit log (`device.unknown_message`) с serial и raw payload |
-| I3 | Повторное сообщение с тем же `mid` не создаёт дубля. Реализация: `INSERT ... ON CONFLICT (message_id) DO NOTHING`. Дубль не считается ошибкой, не логируется |
+| I3 | Повторное сообщение с тем же `mid` у того же устройства не создаёт дубля. Реализация: (1) `INSERT INTO ingestion_dedup(device_id, message_id, first_seen_at) ... ON CONFLICT (device_id, message_id) DO NOTHING`; (2) если вставка прошла — пишем `readings`; (3) если конфликт — это дубль, silently ignore (не ошибка, не логируется) |
 | I4 | Capability validation: сервер проверяет, что обязательные для данного типа устройства поля присутствуют. Если `SENS-TH-*` прислал payload без `t` — отклоняется с audit log (`payload.missing_capability`) |
 | I5 | Калибровочная поправка: если `devices.calibrationOffsetC != 0`, значение `t` из payload корректируется (`t + offset`) перед записью в `readings.temperatureC`. Значение `rawPayload` содержит оригинальный JSON без коррекции |
 | I6 | Запись в `readings`: `temperatureC`, `humidityPct` заполняются из payload. Поля, отсутствующие в payload, записываются как `NULL` |
@@ -437,12 +448,13 @@ export const MQTT = {
 | P2 | Сервер валидирует формат serial, извлекает device type |
 | P3 | Сервер генерирует уникальные MQTT credentials: `mqtt_username` = `dev_{serial_lowercase}`, `mqtt_password` = cryptographically random 32-char string |
 | P4 | Password hash записывается в `devices.mqttPasswordHash` (bcrypt) |
-| P5 | Сервер записывает username:password_hash в Mosquitto password file (bind-mounted host path, см. раздел 11). Формат: Mosquitto `password_file` format |
-| P6 | Сервер записывает ACL-правило в Mosquitto ACL file: устройство может PUBLISH только в `d/{serial}/t` и `d/{serial}/s`. Не может SUBSCRIBE ни на что. Не может PUBLISH в чужие топики |
-| P7 | После обновления password file и ACL file сервер отправляет SIGHUP в Mosquitto-контейнер (через Docker API unix socket, bind-mounted) или вызывает `mosquitto_passwd` через `child_process`. Mosquitto перечитывает файлы без перезапуска |
+| P5 | Канонический источник правды для MQTT credentials — БД (`devices`). `passwd` и `acl` — производные артефакты для Mosquitto |
+| P6 | После каждого provision/decommission сервер полностью пересобирает `passwd` и `acl` из активных устройств в БД: пишет во временные файлы, делает atomic rename, затем отправляет reload (SIGHUP) в Mosquitto |
+| P7 | Сервер при старте всегда выполняет reconcile: полная пересборка `passwd`/`acl` из БД, даже если файлы уже существуют |
 | P8 | Ответ API содержит plaintext `mqtt_password` (один раз). После этого plaintext не хранится нигде |
-| P9 | Decommission: `DELETE /api/v1/devices/:serial` устанавливает `decommissionedAt`, удаляет строку из password file и ACL file, отправляет SIGHUP. Исторические readings и alert events сохраняются |
+| P9 | Decommission: `DELETE /api/v1/devices/:serial` устанавливает `decommissionedAt`, затем запускает full rebuild `passwd`/`acl` и reload Mosquitto. Исторические readings и alert events сохраняются |
 | P10 | Audit log: `device.provisioned`, `device.decommissioned` |
+| P11 | Provision/decommission считается успешным только если: БД записана, `passwd/acl` пересобраны, reload Mosquitto выполнен. Если любой шаг после БД не удался — API возвращает 500; система остаётся восстановимой через reconcile при следующем старте/следующей успешной операции |
 
 **Файловая механика Mosquitto credentials:**
 
@@ -455,8 +467,9 @@ export const MQTT = {
 # Host: ./data/mosquitto/passwd   → Container: /mosquitto-data/passwd
 # Host: ./data/mosquitto/acl      → Container: /mosquitto-data/acl
 #
-# Server пишет в файлы → Mosquitto читает.
-# После записи server шлёт SIGHUP → Mosquitto перечитывает.
+# Server не редактирует файлы построчно.
+# Server пересобирает passwd/acl из БД целиком (tmp + atomic rename),
+# затем шлёт SIGHUP → Mosquitto перечитывает.
 ```
 
 ### 8.3 Alerting
@@ -468,7 +481,7 @@ export const MQTT = {
 | A3 | Cooldown: если `lastTriggeredAt` + `cooldownMinutes` > now — правило не срабатывает, даже если условие истинно |
 | A4 | При срабатывании: создаётся запись в `alert_events`, обновляется `alertRules.lastTriggeredAt` |
 | A5 | Callback: если env `ALERT_CALLBACK_URL` задан — отправляется HTTP POST. Один URL, глобальный. Формат тела — см. раздел 9. Timeout: 5 секунд. Один attempt, без retry |
-| A6 | `callbackSent` = true если HTTP-ответ получен (любой код). `callbackResponseCode` = HTTP status code ответа. Если timeout или network error — `callbackSent = false`, `callbackResponseCode = NULL` |
+| A6 | `callbackAttempted` = true, если HTTP-ответ получен (любой код). `callbackResponseCode` = HTTP status code ответа. Если timeout/network error — `callbackAttempted = false`, `callbackResponseCode = NULL`. Успех callback в P1 трактуется как `2xx` по `callbackResponseCode` |
 | A7 | Acknowledgement: `PATCH /api/v1/alert-events/:id/acknowledge` с полем `acknowledgedBy` (строка, обязательная). Устанавливает `acknowledgedAt = now()`. Повторный acknowledge — 409 |
 | A8 | Audit log: `alert.triggered`, `alert.acknowledged` |
 | A9 | Per-rule callback URL | MUST NOT в P1. BACKLOG P2 |
@@ -480,7 +493,7 @@ export const MQTT = {
 |---|---|
 | AU1 | Таблица `audit_log` — append-only. Application code содержит только `insert` и `select`. Нет `update`, `delete`, `upsert` |
 | AU2 | Actions в P1: `device.provisioned`, `device.decommissioned`, `device.online`, `device.offline`, `device.unknown_message`, `alert.triggered`, `alert.acknowledged`, `payload.invalid`, `payload.missing_capability`, `config.changed` |
-| AU3 | `actor`: `"system"` для автоматических действий. Для действий оператора — строка из API-запроса |
+| AU3 | `actor`: для mutating endpoints (кроме acknowledge) — `?actor=...` или `"system"` по умолчанию; для acknowledge actor берётся из обязательного `acknowledgedBy` |
 | AU4 | `details`: JSON с контекстом. Для `device.unknown_message` — serial + raw payload. Для `alert.triggered` — reading value + threshold. Формат details не стандартизирован, но каждый action type должен иметь предсказуемую структуру |
 
 ### 8.5 Security
@@ -515,6 +528,10 @@ export const MQTT = {
 | S14 | Документация содержит раздел backup/restore с конкретными командами `pg_dump` / `pg_restore` |
 | S15 | MQTT passwords в password file — в Mosquitto hashed format (через `mosquitto_passwd -b`) |
 
+**P1 exception (privileged):**
+
+В P1 server имеет доступ к Docker Engine socket (`/var/run/docker.sock`, read-only mount) только для reload Mosquitto после изменения `passwd/acl`. Это временный компромисс P1, не норма целевой архитектуры.
+
 ---
 
 ## 9. API Contract
@@ -531,6 +548,8 @@ export const MQTT = {
 | Not found | 404 с конкретным кодом, например `DEVICE_NOT_FOUND` |
 | Conflict | 409 с конкретным кодом |
 | Server error | 500 с `code: "INTERNAL_ERROR"`, без стектрейса |
+| Actor (mutating) | Для всех `POST`/`PATCH`/`DELETE`, кроме acknowledge: опциональный `?actor=...`; если не передан — в audit пишется `"system"` |
+| Actor (acknowledge) | Для `PATCH /alert-events/:id/acknowledge` actor берётся из обязательного `acknowledgedBy` в body; `?actor` не поддерживается |
 
 ### Response format
 
@@ -545,6 +564,7 @@ export const MQTT = {
 ```
 
 Никаких `meta`, `requestId`, `pagination` в P1.
+`deviceType` в API-ответах — вычисляемое поле из `serial` (`parseSerial(serial)`), в БД не хранится.
 
 ### Endpoints
 
@@ -606,6 +626,10 @@ Response 201:
 - 409 `DEVICE_ALREADY_PROVISIONED` — serial уже зарегистрирован
 - 404 `ZONE_NOT_FOUND` — если zoneId указан, но не существует
 
+Поведение `zoneId`:
+- Если `zoneId` не передан, сервер привязывает устройство к default seeded zone `Default Zone` (в русской локализации допускается `Основная зона`)
+- Если `zoneId` передан, сервер валидирует, что зона принадлежит текущей location
+
 ---
 
 #### `GET /api/v1/devices`
@@ -627,6 +651,7 @@ Response 200:
       "lastTemperatureC": -18.3,
       "lastHumidityPct": 45.2,
       "lastBatteryPct": 87,
+      "connectivityStatus": "online",
       "alertStatus": "normal",
       "provisionedAt": "2025-06-01T10:00:00Z"
     }
@@ -634,7 +659,8 @@ Response 200:
 }
 ```
 
-`alertStatus`: `"normal"` — нет неподтверждённых alert events. `"alert"` — есть хотя бы один unacknowledged alert event. `"offline"` — устройство offline.
+`connectivityStatus`: `"online"` или `"offline"` (связность устройства).
+`alertStatus`: `"normal"` — нет неподтверждённых alert events, `"alert"` — есть хотя бы один unacknowledged alert event.
 
 Decommissioned устройства не возвращаются.
 
@@ -667,9 +693,9 @@ Audit log: `config.changed` с деталями что изменилось.
 
 #### `DELETE /api/v1/devices/:serial`
 
-Query параметр `?actor=Иванов` (обязателен).
+Query параметр `?actor=Иванов` (опционален, default actor = `"system"`).
 
-Soft delete: устанавливает `decommissionedAt`, удаляет MQTT credentials из файлов, отправляет SIGHUP.
+Soft delete: устанавливает `decommissionedAt`; затем выполняется full rebuild `passwd`/`acl` из БД и SIGHUP для Mosquitto.
 
 Response 200:
 ```json
@@ -768,6 +794,7 @@ Request:
 ```
 
 `acknowledgedBy` — обязательная непустая строка.
+Для этого endpoint `?actor` не поддерживается: actor в audit log берётся из `acknowledgedBy`.
 
 Response 200: обновлённый alert event.
 
@@ -824,13 +851,18 @@ P1 содержит **один экран** — таблица/список вс
 - Serial
 - Display name
 - Zone name
-- Статус: online (зелёный) / offline (серый) / alert (красный)
+- Connectivity status и alert status (UI вычисляет цвет по приоритету)
 - Последнее значение температуры (если есть)
 - Последнее значение влажности (если есть)
 - Батарея % (если батарейный)
 - Время последнего показания (относительное: «2 мин назад»)
 
 Неподтверждённые алерты отображаются красной строкой в том же списке, с кнопкой «Подтвердить» (вызывает `PATCH .../acknowledge`, запрашивает имя оператора через prompt/modal).
+
+Правило цвета строки в UI:
+- Если `alertStatus = "alert"` → красный.
+- Иначе если `connectivityStatus = "offline"` → серый.
+- Иначе → зелёный.
 
 Это всё. Нет отдельных страниц, нет маршрутизации, нет навигации. Один fetch на `/api/v1/devices` + `/api/v1/alert-events?acknowledged=false`, автообновление каждые 30 секунд.
 
@@ -905,11 +937,11 @@ sensor-platform/
 ├── config/
 │   └── mosquitto/
 │       └── mosquitto.conf       # Поставляется нами, read-only
-├── data/                        # Создаётся при первом запуске
+├── data/                        # Поставляется в артефакте (включая пустые passwd/acl)
 │   ├── postgres/                # PG data directory
 │   └── mosquitto/
-│       ├── passwd               # Генерируется server при provisioning
-│       ├── acl                  # Генерируется server при provisioning
+│       ├── passwd               # Пустой файл в поставке; далее derived artifact, пересобирается server
+│       ├── acl                  # Пустой файл в поставке; далее derived artifact, пересобирается server
 │       └── data/                # Mosquitto persistence
 ├── scripts/
 │   ├── backup.sh
@@ -970,12 +1002,13 @@ log_type error
 При первом `docker compose up`:
 1. PostgreSQL инициализируется, Drizzle миграции запускаются автоматически (server при старте)
 2. TimescaleDB hypertable создаётся миграцией
-3. Seed: создаётся одна organization, одна location, одна zone (имена из env или defaults)
-4. Mosquitto стартует с пустыми `passwd` и `acl` файлами
-5. Server создаёт admin MQTT user (из env) в passwd file
-6. Server подключается к Mosquitto как admin, подписывается на `d/+/t` и `d/+/s`
-7. UI доступен на `http://{host}:{HTTP_PORT}`
-8. Swagger UI доступен на `http://{host}:{HTTP_PORT}/api/docs`
+3. Seed: создаётся одна organization, одна location, одна zone (`Default Zone`, в русской локализации допускается `Основная зона`)
+4. В поставке уже есть пустые файлы `deploy/data/mosquitto/passwd` и `deploy/data/mosquitto/acl` (часть артефакта)
+5. Mosquitto стартует, читая эти файлы; server не создаёт путь с нуля
+6. Server выполняет reconcile и пересобирает `passwd`/`acl` из БД (включая admin MQTT user), затем отправляет reload Mosquitto
+7. Server подключается к Mosquitto как admin, подписывается на `d/+/t` и `d/+/s`
+8. UI доступен на `http://{host}:{HTTP_PORT}`
+9. Swagger UI доступен на `http://{host}:{HTTP_PORT}/api/docs`
 
 ---
 
@@ -995,6 +1028,10 @@ sensor-platform/
 │   ├── config/
 │   │   └── mosquitto/
 │   │       └── mosquitto.conf
+│   ├── data/
+│   │   └── mosquitto/
+│   │       ├── passwd            # Пустой файл в поставке
+│   │       └── acl               # Пустой файл в поставке
 │   ├── scripts/
 │   │   ├── backup.sh
 │   │   └── restore.sh
@@ -1051,7 +1088,7 @@ sensor-platform/
 │           │   ├── ingestion.ts        # I1–I9
 │           │   ├── device.ts
 │           │   ├── alert.ts            # A1–A8
-│           │   ├── provision.ts        # P1–P10
+│           │   ├── provision.ts        # P1–P11
 │           │   └── audit.ts            # AU1–AU4
 │           └── lib/
 │               ├── mosquitto-files.ts  # Read/write passwd + ACL files
@@ -1105,6 +1142,7 @@ sensor-platform/
 - Redis (кэш last readings, rate limiting)
 - CSV/PDF export
 - Pagination (cursor-based)
+- Remove docker.sock dependency for broker reload (replace with safer reload helper / auth plugin based approach)
 
 **P3 (после 20+ инсталляций):**
 - Коннекторы (iiko, 1С, HACCP-online)
@@ -1145,11 +1183,13 @@ sensor-platform/
 [ ] Миграции запускаются при старте server
 [ ] Seed создаёт organization + location + zone при первом запуске
 [ ] Mosquitto: allow_anonymous false, password_file, ACL
-[ ] Provision API: создаёт device + MQTT credentials + обновляет passwd/ACL + SIGHUP
+[ ] Provision API: создаёт device + MQTT credentials + full rebuild passwd/ACL из БД + SIGHUP
+[ ] Startup reconcile: server всегда пересобирает passwd/ACL из БД
 [ ] Ingestion: подписка на d/+/t, парсинг, валидация по DevicePayloadSchema
 [ ] Ingestion: отклонение незарегистрированных устройств + audit log
 [ ] Ingestion: capability validation (обязательные поля для типа)
-[ ] Ingestion: дедупликация по mid (ON CONFLICT DO NOTHING)
+[ ] Ingestion: дедупликация через ingestion_dedup по (deviceId, messageId), дубли silently ignored
+[ ] readings индекс: (device_id, timestamp DESC) для GET /devices/:serial/readings
 [ ] Ingestion: calibration offset applied, raw payload сохранён
 [ ] Ingestion: devices.lastSeenAt, isOnline, last* поля обновлены
 [ ] Status: подписка на d/+/s, обработка online/offline
@@ -1161,7 +1201,7 @@ sensor-platform/
 [ ] Audit log: append-only, все actions из AU2
 [ ] API: все endpoints из раздела 9 работают
 [ ] Swagger UI доступен на /api/docs
-[ ] Decommission: soft delete + удаление из passwd/ACL + SIGHUP
+[ ] Decommission: soft delete + full rebuild passwd/ACL + SIGHUP
 [ ] Static UI files раздаются Fastify на /
 ```
 
@@ -1179,9 +1219,11 @@ sensor-platform/
 
 ```
 [ ] deploy/ содержит docker-compose.yml, .env.example, mosquitto.conf, scripts, docs
+[ ] deploy/data/mosquitto/passwd и deploy/data/mosquitto/acl поставляются пустыми файлами в артефакте
 [ ] .env.example: все обязательные переменные с комментариями, без реальных значений
 [ ] install-guide.md: пошаговая инструкция от скачивания до первого датчика
-[ ] security.md: как устроена авторизация, предупреждение про firewall
+[ ] install-guide.md: явно описывает, что passwd/acl поставляются пустыми и заполняются server через reconcile
+[ ] security.md: как устроена авторизация, предупреждение про firewall и P1 exception про docker.sock
 [ ] backup-restore.md: конкретные команды pg_dump/pg_restore
 [ ] Все Docker images тегированы версией 0.1.0, нигде нет latest
 [ ] Simulator работает и генерирует реалистичные данные
