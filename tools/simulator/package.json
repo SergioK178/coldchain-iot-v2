@@ -9,5 +9,8 @@
   "devDependencies": {
     "typescript": "^5.7.0",
     "tsx": "^4.19.0"
+  },
+  "dependencies": {
+    "mqtt": "^5.10.0"
   }
 }
