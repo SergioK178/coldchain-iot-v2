@@ -1,21 +1,393 @@
 # Sensor Platform
 
-IoT Sensor Platform for cold chain monitoring.
+IoT-платформа мониторинга холодовой цепи. Сбор показаний температуры и влажности с датчиков по MQTT, хранение в TimescaleDB, правила тревог с HTTP-уведомлениями, веб-интерфейс оператора.
 
-See [MASTER-SPEC.md](docs/MASTER-SPEC.md) for full specification.
+**Спецификация:** [MASTER-SPEC.md](docs/MASTER-SPEC.md)
+**Итоги реализации P1:** [IMPLEMENTATION-SUMMARY.md](docs/P1/IMPLEMENTATION-SUMMARY.md)
 
-## Development
+---
+
+## Структура проекта
+
+```
+packages/shared/     — Zod-схемы, типы устройств, константы (общий код)
+packages/db/         — Drizzle ORM, схема БД, миграции, seed
+apps/server/         — Fastify-сервер (API, MQTT, алерты, provisioning, UI)
+ui/                  — React SPA (Vite)
+tools/simulator/     — MQTT-симулятор датчика
+tools/provision-cli/ — CLI для массовой регистрации из CSV
+deploy/              — Docker Compose, конфиги, скрипты, документация
+```
+
+---
+
+## Быстрый старт (development)
+
+### Требования
+
+- Node.js 22+
+- pnpm 9+
+- Docker и Docker Compose v2
+
+### 1. Установить зависимости и собрать
 
 ```bash
 pnpm install
-pnpm build
+pnpm --filter @sensor/shared build
+pnpm --filter @sensor/db build
+pnpm --filter @sensor/server build
+pnpm --filter @sensor/ui build
 ```
 
-## Deploy
+Или всё сразу:
+
+```bash
+pnpm install && pnpm -r build
+```
+
+### 2. Запустить тесты
+
+```bash
+pnpm --filter @sensor/shared test
+```
+
+---
+
+## Развёртывание (production / on-premise)
+
+### Требования к серверу
+
+- Docker Engine 24+ и Docker Compose v2
+- 1 ГБ RAM (минимум)
+- 10 ГБ диск
+- Локальная сеть (LAN) между сервером и датчиками
+
+### 1. Подготовить окружение
 
 ```bash
 cd deploy
 cp .env.example .env
-# fill in .env
+```
+
+Заполнить `.env`:
+
+```env
+# Обязательные (придумайте надёжные значения):
+DB_PASSWORD=ваш_пароль_бд
+MQTT_ADMIN_PASSWORD=ваш_пароль_mqtt
+API_TOKEN=токен_минимум_32_символа_для_api
+
+# Опциональные (значения по умолчанию):
+# HTTP_PORT=8080
+# MQTT_PORT=1883
+# DEVICE_OFFLINE_TIMEOUT_SEC=300
+# ALERT_CALLBACK_URL=http://192.168.1.100:9000/hooks/sensor
+```
+
+### 2. Собрать Docker-образ сервера
+
+Из корня репозитория:
+
+```bash
+docker build -f apps/server/Dockerfile -t ghcr.io/your-org/sensor-server:0.1.0 .
+```
+
+### 3. Запустить
+
+```bash
+cd deploy
 docker compose up -d
 ```
+
+Проверить статус:
+
+```bash
+docker compose ps          # все контейнеры healthy
+curl http://localhost:8080/api/v1/health
+```
+
+Ожидаемый ответ:
+
+```json
+{"ok": true, "data": {"version": "0.1.0", "uptime": 42}}
+```
+
+### Что происходит при запуске
+
+1. PostgreSQL + TimescaleDB инициализируются
+2. Сервер выполняет Drizzle-миграции (создаёт 9 таблиц + hypertable)
+3. Seed: создаётся организация, локация, зона по умолчанию
+4. Reconcile: сервер пересобирает `passwd`/`acl` из БД и перезагружает Mosquitto
+5. Fastify слушает на порту 8080 (API + UI + Swagger)
+6. MQTT-подписка на `d/+/t` (телеметрия) и `d/+/s` (статус)
+7. Таймер проверки офлайна — каждые 60 секунд
+
+---
+
+## Регистрация датчиков
+
+### Один датчик через API
+
+```bash
+curl -X POST http://localhost:8080/api/v1/devices/provision \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -d '{
+    "serial": "SENS-TH-00001",
+    "displayName": "Морозилка №1",
+    "powerSource": "battery"
+  }'
+```
+
+Ответ содержит MQTT-credentials (возвращаются один раз):
+
+```json
+{
+  "ok": true,
+  "data": {
+    "serial": "SENS-TH-00001",
+    "deviceType": "TH",
+    "mqtt": {
+      "username": "dev_sens_th_00001",
+      "password": "a7f3...сгенерированный_пароль",
+      "topic": "d/SENS-TH-00001/t",
+      "statusTopic": "d/SENS-TH-00001/s"
+    }
+  }
+}
+```
+
+### Массовая регистрация из CSV
+
+Подготовить файл `devices.csv`:
+
+```csv
+serial,displayName,powerSource,zoneId
+SENS-TH-00001,Морозилка №1,battery,
+SENS-TH-00002,Морозилка №2,battery,
+SENS-TP-00003,Зонд холодильника,wired,
+```
+
+Запустить:
+
+```bash
+pnpm --filter @sensor/provision-cli provision -- \
+  --file devices.csv \
+  --api-url http://localhost:8080 \
+  --api-token $API_TOKEN \
+  --output-file credentials.csv
+```
+
+Результат — `credentials.csv` с username/password для каждого датчика.
+
+---
+
+## Запуск симулятора
+
+Если реальных датчиков нет — используйте симулятор:
+
+```bash
+pnpm --filter @sensor/simulator simulate -- \
+  SENS-TH-00001 dev_sens_th_00001 a7f3...пароль
+```
+
+Или через переменные окружения:
+
+```bash
+DEVICE_SERIAL=SENS-TH-00001 \
+MQTT_URL=mqtt://localhost:1883 \
+MQTT_USERNAME=dev_sens_th_00001 \
+MQTT_PASSWORD=a7f3...пароль \
+INTERVAL_SEC=10 \
+pnpm --filter @sensor/simulator simulate
+```
+
+Симулятор:
+- Публикует телеметрию каждые N секунд (температура, влажность, батарея, RSSI)
+- Отправляет LWT и online-статус
+- При остановке (Ctrl+C) датчик переходит в offline
+
+Несколько симуляторов можно запустить параллельно — по одному на каждое зарегистрированное устройство.
+
+---
+
+## Настройка тревог
+
+### Создать правило
+
+```bash
+curl -X POST http://localhost:8080/api/v1/devices/SENS-TH-00001/alert-rules \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -d '{
+    "metric": "temperature_c",
+    "operator": "gt",
+    "threshold": -15.0,
+    "cooldownMinutes": 15
+  }'
+```
+
+Доступные метрики: `temperature_c`, `humidity_pct` (зависит от типа датчика).
+Операторы: `gt`, `lt`, `gte`, `lte`.
+
+### HTTP-callback при тревоге
+
+Если в `.env` задан `ALERT_CALLBACK_URL`, при срабатывании правила сервер отправит POST:
+
+```json
+{
+  "event": "alert.triggered",
+  "triggeredAt": "2025-07-15T14:30:00Z",
+  "device": { "serial": "SENS-TH-00001", "displayName": "Морозилка №1" },
+  "rule": { "metric": "temperature_c", "operator": "gt", "threshold": -15.0 },
+  "reading": { "value": -13.8, "timestamp": "2025-07-15T14:30:00Z" }
+}
+```
+
+Timeout: 5 секунд, одна попытка, без повторов.
+
+---
+
+## Веб-интерфейс
+
+Открыть: `http://<адрес>:8080`
+
+1. При первом входе — ввести API_TOKEN
+2. Отображается таблица всех устройств:
+   - Serial, имя, зона
+   - Статус: зелёный (норма), серый (офлайн), красный (тревога)
+   - Последние значения: температура, влажность, батарея
+   - Время последнего показания
+3. Неподтверждённые тревоги — кнопка «Подтвердить» (запрашивает имя оператора)
+4. Автообновление каждые 30 секунд
+
+---
+
+## API-документация
+
+- **Swagger UI:** `http://<адрес>:8080/api/docs`
+- **OpenAPI JSON:** `http://<адрес>:8080/api/docs/json`
+
+### Основные endpoints
+
+| Метод | URL | Описание |
+|---|---|---|
+| GET | /api/v1/health | Статус сервера (без авторизации) |
+| POST | /api/v1/devices/provision | Регистрация датчика |
+| GET | /api/v1/devices | Список устройств |
+| GET | /api/v1/devices/:serial | Одно устройство |
+| PATCH | /api/v1/devices/:serial | Обновить имя/зону/калибровку |
+| DELETE | /api/v1/devices/:serial | Вывод из эксплуатации |
+| GET | /api/v1/devices/:serial/readings | История показаний |
+| POST | /api/v1/devices/:serial/alert-rules | Создать правило тревоги |
+| GET | /api/v1/devices/:serial/alert-rules | Правила устройства |
+| PATCH | /api/v1/alert-rules/:id | Обновить правило |
+| DELETE | /api/v1/alert-rules/:id | Удалить правило |
+| GET | /api/v1/alert-events | События тревог |
+| PATCH | /api/v1/alert-events/:id/acknowledge | Подтвердить тревогу |
+| GET | /api/v1/audit-log | Журнал аудита |
+
+Все endpoints (кроме health) требуют `Authorization: Bearer <API_TOKEN>`.
+
+---
+
+## Тестирование на реальном стенде
+
+### E2E тест (только API, без симуляторов)
+
+```bash
+cd deploy
+API_TOKEN=ваш_токен ./scripts/e2e-test.sh
+```
+
+Проверяет: health, provisioning, list/get/patch, alert rules и capabilities, alert events, readings, audit log, ошибки 401/404/409, decommission, swagger, backup.
+
+### E2E тест с симуляторами
+
+```bash
+cd deploy
+API_TOKEN=ваш_токен REPO_ROOT=/path/to/repo ./scripts/e2e-with-simulators.sh
+```
+
+Полный цикл: регистрация 3 устройств → запуск симуляторов → проверка online и readings → создание правила → ожидание тревоги → подтверждение → остановка симулятора → проверка offline → вывод из эксплуатации → backup.
+
+### Smoke-нагрузка
+
+```bash
+cd deploy
+API_TOKEN=ваш_токен REPO_ROOT=/path/to/repo ./scripts/smoke-load.sh
+```
+
+10 симуляторов, интервал 10 секунд (60 сообщений/мин), работает 2 минуты. Мониторит health, количество online-устройств, потребление памяти, ошибки в логах.
+
+Все скрипты возвращают exit code 0 при успехе, >0 при ошибках.
+
+---
+
+## Резервное копирование
+
+### Создать бэкап
+
+```bash
+cd deploy
+./scripts/backup.sh
+# → backup_20250715_030000.sql
+```
+
+### Восстановить
+
+```bash
+cd deploy
+./scripts/restore.sh backup_20250715_030000.sql
+docker compose restart server   # reconcile восстановит passwd/acl
+```
+
+### Автоматизация
+
+```bash
+# crontab -e:
+0 3 * * * cd /path/to/deploy && ./scripts/backup.sh >> /var/log/sensor-backup.log 2>&1
+```
+
+Файлы `data/mosquitto/passwd` и `acl` бэкапить не нужно — сервер восстанавливает их из БД при каждом запуске (reconcile).
+
+---
+
+## Безопасность
+
+- MQTT: per-device аутентификация, ACL, анонимный доступ запрещён
+- API: Bearer token на всех endpoints
+- Пароли в БД и passwd-файле хранятся в PBKDF2-SHA512
+- Docker socket mount (read-only) — временное решение P1 для SIGHUP, замена запланирована в P2
+
+Подробнее: [deploy/docs/security.md](deploy/docs/security.md)
+
+---
+
+## Логи и диагностика
+
+```bash
+docker compose logs server -f    # логи сервера
+docker compose logs mqtt -f      # логи Mosquitto
+docker compose logs db -f        # логи PostgreSQL
+```
+
+Проверить reconcile:
+
+```bash
+cat deploy/data/mosquitto/passwd   # должны быть записи admin + устройства
+cat deploy/data/mosquitto/acl      # ACL правила
+```
+
+---
+
+## Документация
+
+| Документ | Описание |
+|---|---|
+| [MASTER-SPEC.md](docs/MASTER-SPEC.md) | Полная спецификация системы |
+| [EXECUTION-PLAN.md](docs/P1/EXECUTION-PLAN.md) | План реализации P1 |
+| [IMPLEMENTATION-SUMMARY.md](docs/P1/IMPLEMENTATION-SUMMARY.md) | Итоги реализации P1 |
+| [install-guide.md](deploy/docs/install-guide.md) | Руководство по установке |
+| [security.md](deploy/docs/security.md) | Безопасность |
+| [backup-restore.md](deploy/docs/backup-restore.md) | Резервное копирование |
