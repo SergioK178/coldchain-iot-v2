@@ -13,7 +13,6 @@ export async function staticPlugin(app: FastifyInstance) {
     root: uiRoot,
     prefix: '/',
     wildcard: false,
-    decorateReply: false,
   });
 
   // SPA fallback: serve index.html for non-API routes
@@ -24,6 +23,13 @@ export async function staticPlugin(app: FastifyInstance) {
         error: { code: 'NOT_FOUND', message: 'Endpoint not found' },
       });
     }
+
+    // Missing static assets should return 404, not SPA index.
+    const pathname = request.url.split('?')[0] ?? '';
+    if (pathname.includes('.')) {
+      return reply.code(404).send('Not Found');
+    }
+
     return reply.sendFile('index.html', uiRoot);
   });
 }

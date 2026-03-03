@@ -28,7 +28,12 @@ services:
       retries: 3
 
   server:
-    image: ghcr.io/your-org/sensor-server:0.1.0
+    # Default for local/dev: use locally built image to avoid pulling template GHCR path.
+    # For staging/prod set a real registry image, e.g. ghcr.io/<org>/<repo>:<tag>.
+    image: sensor-server-local:0.1.0
+    build:
+      context: ..
+      dockerfile: apps/server/Dockerfile
     restart: unless-stopped
     depends_on:
       db: { condition: service_healthy }

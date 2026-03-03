@@ -1,0 +1,60 @@
+=== E2E Integration Test ===
+
+1. Health check
+  [PASS] GET /health returns ok
+  [PASS] version is 0.1.0
+
+2. Provisioning devices
+  [PASS] Provisioned SENS-TH-02458
+  [PASS] Provisioned SENS-TH-02459
+  [PASS] Provisioned SENS-TP-02460
+
+3. Verify device listing
+  [PASS] GET /devices returns >= 3 devices
+  [PASS] Device SENS-TH-02458 in list
+  [PASS] Device SENS-TH-02459 in list
+  [PASS] Device SENS-TP-02460 in list
+
+4. Get single device
+  [PASS] GET /devices/SENS-TH-02458 returns ok
+  [PASS] Has serial field
+  [PASS] Has deviceType TH
+
+5. Patch device
+  [PASS] PATCH displayName
+
+6. Alert rules
+  [PASS] Created alert rule
+  [PASS] GET alert-rules returns rule
+  [PASS] Rejects humidity rule for TP device
+
+7. Alert events
+  [PASS] GET /alert-events returns ok
+
+8. Readings
+  [PASS] GET /readings returns ok
+
+9. Audit log
+  [PASS] GET /audit-log returns ok
+  [PASS] Audit log has entries
+  [PASS] Has device.provisioned action
+
+10. Error cases
+  [PASS] Unknown device returns 404
+  [PASS] No token returns 401
+  [PASS] Duplicate provision returns 409
+
+11. Decommission
+  [PASS] DELETE /devices/SENS-TP-02460 returns ok
+  [PASS] Decommissioned device not in list
+
+12. Swagger
+  [PASS] OpenAPI JSON accessible
+
+13. Backup
+Backup saved to backup_20260303_120231.sql
+  [PASS] Backup created
+
+===================================
+Results: 29 passed, 0 failed
+===================================

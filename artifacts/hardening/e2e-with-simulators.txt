@@ -1,0 +1,58 @@
+=== Full E2E Test with Simulators ===
+
+1. Provisioning 3 devices
+  Provisioned SENS-TH-04933
+  Provisioned SENS-TH-04934
+  Provisioned SENS-TP-04935
+
+2. Starting 3 simulators
+  Started SENS-TH-04933 (PID 40686)
+  Started SENS-TH-04934 (PID 40687)
+  Started SENS-TP-04935 (PID 40688)
+
+Waiting 15s for telemetry...
+
+3. Verify devices
+  [PASS] 3 devices in list
+  [PASS] SENS-TH-04933 is online
+  [PASS] SENS-TH-04934 is online
+  [PASS] SENS-TP-04935 is online
+
+4. Verify readings
+  [PASS] SENS-TH-04933 has readings (3)
+  [PASS] SENS-TH-04934 has readings (3)
+  [PASS] SENS-TP-04935 has readings (3)
+
+5. UI check
+  [PASS] UI index.html served
+
+6. Alert flow
+  [PASS] Created alert rule
+  Waiting 10s for alert trigger...
+  [PASS] Alert event created (10)
+  [PASS] Device alertStatus is 'alert'
+
+7. Acknowledge alert
+  [PASS] Acknowledge succeeded
+  [PASS] Re-acknowledge returns 409
+  [PASS] Audit has alert.acknowledged
+
+8. Offline detection
+  Stopping simulator for SENS-TP-04935...
+  Waiting for LWT / offline (up to 60s)...
+./scripts/e2e-with-simulators.sh: line 181: 40688 Killed                  setsid env DEVICE_SERIAL="$S" MQTT_URL="mqtt://localhost:$MQTT_PORT" MQTT_USERNAME="${MQTT_U[$S]}" MQTT_PASSWORD="${MQTT_P[$S]}" INTERVAL_SEC=5 "$REPO_ROOT/tools/simulator/node_modules/.bin/tsx" "$REPO_ROOT/tools/simulator/src/index.ts" "$S" "${MQTT_U[$S]}" "${MQTT_P[$S]}" > /dev/null 2>&1
+  [PASS] SENS-TP-04935 offline via LWT
+
+9. Decommission
+  [PASS] Decommissioned SENS-TP-04935
+  [PASS] Decommissioned device removed from list
+
+10. Backup/Restore
+Backup saved to backup_20260303_121522.sql
+  [PASS] Backup file created
+
+===================================
+Results: 18 passed, 0 failed
+===================================
+
+Cleaning up simulators...

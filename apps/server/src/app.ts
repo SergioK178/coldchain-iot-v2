@@ -75,7 +75,8 @@ export async function buildApp(env: Env, adminPasswordHash: string) {
 
   // Plugins
   await app.register(swaggerPlugin);
-  await app.register(authPlugin);
+  // Register auth hook on root instance to enforce token on all API routes.
+  await authPlugin(app);
   await app.register(mqttPlugin);
 
   // Routes

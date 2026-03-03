@@ -129,7 +129,7 @@ Healthcheck. Auth не требуется.
     "displayName": "Морозилка №3",
     "mqtt": {
       "username": "dev_sens_th_00042",
-      "password": "aB3dE5fG7hJ9kL1mN3pQ5rS7tU9wX1y",
+      "password": "a7f3e9b1c4d2f5a8e2b6c9d3e7f0a4b8",
       "topic": "d/SENS-TH-00042/t",
       "statusTopic": "d/SENS-TH-00042/s"
     }
@@ -138,6 +138,8 @@ Healthcheck. Auth не требуется.
 ```
 
 `mqtt.password` возвращается **только один раз**. Plaintext не хранится на сервере.
+
+> **Формат пароля:** 32 символа lowercase hex (`[a-f0-9]{32}`), генерируется криптографически стойким CSPRNG.
 
 **Errors:**
 - 400 `INVALID_SERIAL_FORMAT`
@@ -579,9 +581,12 @@ TP (проводной):
 | Событие | Кто | Topic | Payload | Retain | QoS |
 |---|---|---|---|---|---|
 | Подключение | Датчик | `d/{serial}/s` | `1` | true | 1 |
-| Отключение | Broker (LWT) | `d/{serial}/s` | `0` | true | 1 |
+| Graceful stop | Датчик (explicit publish) | `d/{serial}/s` | `0` | true | 1 |
+| Аварийный обрыв | Broker (LWT) | `d/{serial}/s` | `0` | true | 1 |
 
 Payload — ASCII символ `1` или `0`, не JSON.
+
+> **Два пути offline:** При graceful shutdown firmware/симулятор **сам** публикует `0` перед отключением — это не LWT. Настоящий LWT срабатывает только при аварийном обрыве (crash, kill, потеря сети, keepalive timeout).
 
 Датчик при подключении обязан:
 1. Настроить LWT: topic `d/{serial}/s`, payload `0`, retain true, QoS 1

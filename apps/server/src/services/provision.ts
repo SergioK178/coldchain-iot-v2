@@ -56,11 +56,12 @@ export async function provisionDevice(
   // P12: reconcile before conflict check
   await reconcileMosquitto(deps);
 
-  // Check if already provisioned
+  // Check if serial already exists in any state.
+  // Re-provision of the same serial is not allowed in current P1 contract.
   const existing = await deps.db
     .select({ id: devices.id })
     .from(devices)
-    .where(and(eq(devices.serial, input.serial), isNull(devices.decommissionedAt)));
+    .where(eq(devices.serial, input.serial));
 
   if (existing.length > 0) {
     return { error: ErrorCode.DEVICE_ALREADY_PROVISIONED } as const;
@@ -92,18 +93,27 @@ export async function provisionDevice(
   const mqttPasswordHash = await generateMosquittoHash(plaintextPassword);
 
   // Insert device
-  const [device] = await deps.db
-    .insert(devices)
-    .values({
-      serial: input.serial,
-      displayName: input.displayName ?? null,
-      zoneId: zoneId ?? null,
-      powerSource: input.powerSource,
-      calibrationOffsetC: input.calibrationOffsetC ?? 0,
-      mqttUsername,
-      mqttPasswordHash,
-    })
-    .returning();
+  let device;
+  try {
+    [device] = await deps.db
+      .insert(devices)
+      .values({
+        serial: input.serial,
+        displayName: input.displayName ?? null,
+        zoneId: zoneId ?? null,
+        powerSource: input.powerSource,
+        calibrationOffsetC: input.calibrationOffsetC ?? 0,
+        mqttUsername,
+        mqttPasswordHash,
+      })
+      .returning();
+  } catch (err: any) {
+    // Gracefully map unique violations to business-level conflict.
+    if (err?.code === '23505') {
+      return { error: ErrorCode.DEVICE_ALREADY_PROVISIONED } as const;
+    }
+    throw err;
+  }
 
   // P6: full rebuild passwd/acl + reload
   try {

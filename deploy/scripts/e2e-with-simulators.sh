@@ -50,8 +50,19 @@ echo ""
 # --- 1. Provision 3 devices ---
 echo "1. Provisioning 3 devices"
 
-SERIALS=("SENS-TH-00011" "SENS-TH-00012" "SENS-TP-00013")
+BASE_ID=$(( (RANDOM % 9000) + 1000 ))
+SERIAL1=$(printf "SENS-TH-%05d" "$BASE_ID")
+SERIAL2=$(printf "SENS-TH-%05d" "$((BASE_ID + 1))")
+SERIAL3=$(printf "SENS-TP-%05d" "$((BASE_ID + 2))")
+SERIALS=("$SERIAL1" "$SERIAL2" "$SERIAL3")
 declare -A MQTT_U MQTT_P
+
+# Best effort cleanup for idempotent reruns.
+for S in "${SERIALS[@]}"; do
+  curl -s -o /dev/null -w "%{http_code}" \
+    -H "Authorization: Bearer $API_TOKEN" \
+    -X DELETE "$API_URL/api/v1/devices/$S" >/dev/null 2>&1 || true
+done
 
 for i in 0 1 2; do
   RESP=$(api -X POST "$API_URL/api/v1/devices/provision" \
@@ -66,12 +77,15 @@ echo ""
 echo "2. Starting 3 simulators"
 
 for S in "${SERIALS[@]}"; do
-  DEVICE_SERIAL="$S" \
-  MQTT_URL="mqtt://localhost:$MQTT_PORT" \
-  MQTT_USERNAME="${MQTT_U[$S]}" \
-  MQTT_PASSWORD="${MQTT_P[$S]}" \
-  INTERVAL_SEC=5 \
-  node --import tsx "$REPO_ROOT/tools/simulator/src/index.ts" > /dev/null 2>&1 &
+  setsid env \
+    DEVICE_SERIAL="$S" \
+    MQTT_URL="mqtt://localhost:$MQTT_PORT" \
+    MQTT_USERNAME="${MQTT_U[$S]}" \
+    MQTT_PASSWORD="${MQTT_P[$S]}" \
+    INTERVAL_SEC=5 \
+    "$REPO_ROOT/tools/simulator/node_modules/.bin/tsx" \
+      "$REPO_ROOT/tools/simulator/src/index.ts" \
+      "$S" "${MQTT_U[$S]}" "${MQTT_P[$S]}" > /dev/null 2>&1 &
   PIDS+=($!)
   echo "  Started $S (PID $!)"
 done
@@ -105,7 +119,11 @@ done
 # --- 5. UI accessible ---
 echo ""
 echo "5. UI check"
-check "UI index.html served" curl -sf "$API_URL/" | grep -q "Sensor Platform"
+if curl -sf "$API_URL/" | grep -q "Sensor Platform"; then
+  check "UI index.html served" true
+else
+  check "UI index.html served" false
+fi
 
 # --- 6. Create alert rule + wait for trigger ---
 echo ""
@@ -138,11 +156,11 @@ if [ "$EVENT_COUNT" -gt 0 ]; then
   check "Acknowledge succeeded" test "$(echo "$ACK" | jq -r '.ok')" = "true"
 
   # 409 on re-acknowledge
-  ACK2=$(curl -sf -o /dev/null -w "%{http_code}" \
+  ACK2=$(curl -s -o /dev/null -w "%{http_code}" \
     -H "Authorization: Bearer $API_TOKEN" \
     -H "Content-Type: application/json" \
     -X PATCH "$API_URL/api/v1/alert-events/$EVENT_ID/acknowledge" \
-    -d '{"acknowledgedBy":"E2E Test"}' 2>/dev/null || echo "409")
+    -d '{"acknowledgedBy":"E2E Test"}' 2>/dev/null || echo "000")
   check "Re-acknowledge returns 409" test "$ACK2" = "409"
 
   # Verify audit
@@ -154,22 +172,32 @@ fi
 echo ""
 echo "8. Offline detection"
 echo "  Stopping simulator for ${SERIALS[2]}..."
-kill "${PIDS[2]}" 2>/dev/null || true
+kill -9 -- "-${PIDS[2]}" 2>/dev/null || kill -9 "${PIDS[2]}" 2>/dev/null || true
 
-echo "  Waiting for LWT / offline (15s)..."
-sleep 15
-
-DEV3_STATUS=$(api "$API_URL/api/v1/devices/${SERIALS[2]}" | jq -r '.data.connectivityStatus')
-check "${SERIALS[2]} offline via LWT" test "$DEV3_STATUS" = "offline"
+echo "  Waiting for LWT / offline (up to 60s)..."
+OFFLINE_OK=0
+for _ in $(seq 1 30); do
+  DEV3_STATUS=$(api "$API_URL/api/v1/devices/${SERIALS[2]}" | jq -r '.data.connectivityStatus')
+  if [ "$DEV3_STATUS" = "offline" ]; then
+    OFFLINE_OK=1
+    break
+  fi
+  sleep 2
+done
+check "${SERIALS[2]} offline via LWT" test "$OFFLINE_OK" = "1"
 
 # --- 9. Decommission ---
 echo ""
 echo "9. Decommission"
-DECOM=$(api -X DELETE "$API_URL/api/v1/devices/${SERIALS[2]}")
+DECOM=$(curl -s -H "Authorization: Bearer $API_TOKEN" -X DELETE "$API_URL/api/v1/devices/${SERIALS[2]}")
 check "Decommissioned ${SERIALS[2]}" test "$(echo "$DECOM" | jq -r '.ok')" = "true"
 
 DEVICES_AFTER=$(api "$API_URL/api/v1/devices")
-check "Decommissioned device removed from list" ! echo "$DEVICES_AFTER" | jq -e ".data[] | select(.serial == \"${SERIALS[2]}\")" >/dev/null
+if ! echo "$DEVICES_AFTER" | jq -e ".data[] | select(.serial == \"${SERIALS[2]}\")" >/dev/null 2>&1; then
+  check "Decommissioned device removed from list" true
+else
+  check "Decommissioned device removed from list" false
+fi
 
 # --- 10. Backup ---
 echo ""

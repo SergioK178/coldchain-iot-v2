@@ -9,6 +9,18 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const POST_MIGRATION_SQL = `
 DO $$
 BEGIN
+  -- TimescaleDB warns on VARCHAR in hypertable tables; normalize to TEXT once.
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'readings'
+      AND column_name = 'message_id'
+      AND data_type <> 'text'
+  ) THEN
+    ALTER TABLE readings ALTER COLUMN message_id TYPE text;
+  END IF;
+
   -- Create hypertable if not already one
   IF NOT EXISTS (
     SELECT 1 FROM timescaledb_information.hypertables

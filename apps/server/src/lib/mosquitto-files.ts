@@ -1,6 +1,6 @@
 import { randomBytes, pbkdf2 as pbkdf2Cb } from 'node:crypto';
 import { promisify } from 'node:util';
-import { writeFile, rename } from 'node:fs/promises';
+import { writeFile, rename, chmod, chown } from 'node:fs/promises';
 import path from 'node:path';
 
 const pbkdf2 = promisify(pbkdf2Cb);
@@ -8,15 +8,27 @@ const pbkdf2 = promisify(pbkdf2Cb);
 const ITERATIONS = 101;
 const KEY_LENGTH = 64; // 512 bits
 const DIGEST = 'sha512';
+const SALT_BYTES = 12;
+const MOSQUITTO_UID = 1883;
+const MOSQUITTO_GID = 1883;
+const MOSQUITTO_FILE_MODE = 0o700;
 
 /**
  * Generate a Mosquitto-compatible PBKDF2-SHA512 password hash.
- * Format: $7$iterations$base64salt$base64hash
+ * Format (mosquitto_passwd compatible): $7$iterations$base64salt$base64hash
+ * Salt must be unpadded base64 from 12 raw bytes.
  */
 export async function generateMosquittoHash(password: string): Promise<string> {
-  const salt = randomBytes(16);
-  const derived = await pbkdf2(password, salt, ITERATIONS, KEY_LENGTH, DIGEST);
-  return `$7$${ITERATIONS}$${salt.toString('base64')}$${derived.toString('base64')}`;
+  const saltBytes = randomBytes(SALT_BYTES);
+  const saltBase64 = saltBytes.toString('base64').replace(/=+$/g, '');
+  const derived = await pbkdf2(
+    password,
+    Buffer.from(saltBase64, 'base64'),
+    ITERATIONS,
+    KEY_LENGTH,
+    DIGEST,
+  );
+  return `$7$${ITERATIONS}$${saltBase64}$${derived.toString('base64')}`;
 }
 
 /**
@@ -70,7 +82,6 @@ function buildAclContent(adminUsername: string, devices: MosquittoAclEntry[]): s
     lines.push(`user ${dev.username}`);
     lines.push(`topic write d/${dev.serial}/t`);
     lines.push(`topic write d/${dev.serial}/s`);
-    lines.push(`topic read d/${dev.serial}/s`);
     lines.push('');
   }
 
@@ -85,6 +96,12 @@ async function writeAtomically(filePath: string, content: string): Promise<void>
   const tmpPath = path.join(dir, `.${path.basename(filePath)}.tmp.${process.pid}`);
   await writeFile(tmpPath, content, 'utf-8');
   await rename(tmpPath, filePath);
+  await chmod(filePath, MOSQUITTO_FILE_MODE);
+  try {
+    await chown(filePath, MOSQUITTO_UID, MOSQUITTO_GID);
+  } catch {
+    // Non-fatal in environments where container user remapping forbids chown.
+  }
 }
 
 /**

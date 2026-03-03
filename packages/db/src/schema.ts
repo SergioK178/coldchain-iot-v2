@@ -49,7 +49,7 @@ export const devices = pgTable('devices', {
 export const readings = pgTable('readings', {
   deviceId: uuid('device_id').references(() => devices.id).notNull(),
   timestamp: timestamp('timestamp', { withTimezone: true }).notNull(),
-  messageId: varchar('message_id', { length: 64 }).notNull(),
+  messageId: text('message_id').notNull(),
   temperatureC: real('temperature_c'),
   humidityPct: real('humidity_pct'),
   batteryPct: integer('battery_pct'),

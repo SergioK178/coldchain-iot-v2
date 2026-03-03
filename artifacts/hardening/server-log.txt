@@ -1,0 +1,36 @@
+server-1  | Running migrations...
+server-1  | {
+server-1  |   severity_local: 'NOTICE',
+server-1  |   severity: 'NOTICE',
+server-1  |   code: '42P06',
+server-1  |   message: 'schema "drizzle" already exists, skipping',
+server-1  |   file: 'schemacmds.c',
+server-1  |   line: '132',
+server-1  |   routine: 'CreateSchemaCommand'
+server-1  | }
+server-1  | {
+server-1  |   severity_local: 'NOTICE',
+server-1  |   severity: 'NOTICE',
+server-1  |   code: '42P07',
+server-1  |   message: 'relation "__drizzle_migrations" already exists, skipping',
+server-1  |   file: 'parse_utilcmd.c',
+server-1  |   line: '207',
+server-1  |   routine: 'transformCreateStmt'
+server-1  | }
+server-1  | {
+server-1  |   severity_local: 'NOTICE',
+server-1  |   severity: 'NOTICE',
+server-1  |   code: '42P07',
+server-1  |   message: 'relation "readings_device_ts_idx" already exists, skipping',
+server-1  |   file: 'index.c',
+server-1  |   line: '877',
+server-1  |   routine: 'index_create'
+server-1  | }
+server-1  | Migrations complete.
+server-1  | Running seed...
+server-1  | Seed complete.
+server-1  | Running Mosquitto reconcile...
+server-1  | Mosquitto reconcile complete.
+server-1  | {"level":30,"time":1772527712944,"pid":1,"hostname":"1a8c5de13540","msg":"Server listening at http://127.0.0.1:8080"}
+server-1  | {"level":30,"time":1772527712944,"pid":1,"hostname":"1a8c5de13540","msg":"Server listening at http://172.21.0.4:8080"}
+server-1  | {"level":30,"time":1772527712948,"pid":1,"hostname":"1a8c5de13540","msg":"MQTT connected"}

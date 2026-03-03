@@ -95,13 +95,17 @@ client.on('error', (err) => {
   console.error('MQTT error:', err.message);
 });
 
-// Graceful shutdown
+// Graceful shutdown: explicitly publish offline status, then disconnect.
+// This is NOT LWT — LWT fires only on ungraceful disconnect (kill, crash, network loss).
 const shutdown = () => {
   console.log('Shutting down simulator...');
   if (interval) clearInterval(interval);
-  client.end(false, () => {
-    console.log('Disconnected (LWT will fire)');
-    process.exit(0);
+  client.publish(statusTopic, '0', { retain: true, qos: 1 }, () => {
+    console.log('Published offline status (explicit, not LWT)');
+    client.end(false, () => {
+      console.log('Disconnected.');
+      process.exit(0);
+    });
   });
 };
 

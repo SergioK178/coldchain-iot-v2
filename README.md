@@ -92,6 +92,10 @@ API_TOKEN=токен_минимум_32_символа_для_api
 docker build -f apps/server/Dockerfile -t ghcr.io/your-org/sensor-server:0.1.0 .
 ```
 
+`ghcr.io/your-org/sensor-server:0.1.0` в примере — это шаблон тега. Есть два рабочих варианта:
+- локальная сборка (команда выше), после чего `docker compose` использует собранный локально образ;
+- pull заранее опубликованного образа из вашего реального GHCR-репозитория (вместо `your-org`).
+
 ### 3. Запустить
 
 ```bash
@@ -110,6 +114,12 @@ curl http://localhost:8080/api/v1/health
 
 ```json
 {"ok": true, "data": {"version": "0.1.0", "uptime": 42}}
+```
+
+Если используется локальный override, запускайте с двумя файлами compose:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 ```
 
 ### Что происходит при запуске
@@ -204,8 +214,10 @@ pnpm --filter @sensor/simulator simulate
 
 Симулятор:
 - Публикует телеметрию каждые N секунд (температура, влажность, батарея, RSSI)
-- Отправляет LWT и online-статус
-- При остановке (Ctrl+C) датчик переходит в offline
+- При подключении настраивает LWT и публикует online-статус (`1`)
+- При остановке (Ctrl+C) явно публикует статус `0` (offline) и отключается — это **не** LWT, а explicit publish
+- Настоящий LWT срабатывает только при аварийном обрыве (kill -9, crash, потеря сети)
+- Для теста именно LWT-path используйте не graceful stop, а аварийную остановку процесса симулятора (`kill -9`)
 
 Несколько симуляторов можно запустить параллельно — по одному на каждое зарегистрированное устройство.
 
@@ -302,6 +314,13 @@ API_TOKEN=ваш_токен ./scripts/e2e-test.sh
 
 Проверяет: health, provisioning, list/get/patch, alert rules и capabilities, alert events, readings, audit log, ошибки 401/404/409, decommission, swagger, backup.
 
+Сохранить артефакт прогона:
+
+```bash
+mkdir -p ../artifacts/hardening
+API_TOKEN=ваш_токен ./scripts/e2e-test.sh | tee ../artifacts/hardening/e2e-test.txt
+```
+
 ### E2E тест с симуляторами
 
 ```bash
@@ -310,6 +329,15 @@ API_TOKEN=ваш_токен REPO_ROOT=/path/to/repo ./scripts/e2e-with-simulator
 ```
 
 Полный цикл: регистрация 3 устройств → запуск симуляторов → проверка online и readings → создание правила → ожидание тревоги → подтверждение → остановка симулятора → проверка offline → вывод из эксплуатации → backup.
+
+Важно: offline-проверка в скрипте ждёт до 60 секунд (polling), чтобы устойчиво покрывать LWT/тайминги на разных стендах.
+
+Сохранить артефакт прогона:
+
+```bash
+mkdir -p ../artifacts/hardening
+API_TOKEN=ваш_токен REPO_ROOT=/path/to/repo ./scripts/e2e-with-simulators.sh | tee ../artifacts/hardening/e2e-with-simulators.txt
+```
 
 ### Smoke-нагрузка
 
@@ -355,12 +383,22 @@ docker compose restart server   # reconcile восстановит passwd/acl
 
 ## Безопасность
 
-- MQTT: per-device аутентификация, ACL, анонимный доступ запрещён
+- MQTT: per-device аутентификация, ACL (publish-only для устройств), анонимный доступ запрещён
 - API: Bearer token на всех endpoints
 - Пароли в БД и passwd-файле хранятся в PBKDF2-SHA512
 - Docker socket mount (read-only) — временное решение P1 для SIGHUP, замена запланирована в P2
 
 Подробнее: [deploy/docs/security.md](deploy/docs/security.md)
+
+### Ограничения P1 (пилотная эксплуатация)
+
+Данная сборка предназначена для **контролируемого пилота** в изолированной LAN, не для широкого неконтролируемого развёртывания.
+
+- **UI** доступен в LAN без дополнительной авторизации (API-вызовы всё равно требуют Bearer token)
+- **Swagger UI** (`/api/docs`) доступен в LAN — осознанный компромисс P1
+- **MQTT порт 1883** не должен быть доступен из интернета (MQTT over TLS — P2)
+- **Docker socket** mount — временное решение P1 для перезагрузки Mosquitto (замена на Dynamic Security Plugin в P2)
+- TLS/HTTPS, ролевая модель пользователей, webhook HMAC — запланированы в P2
 
 ---
 
@@ -371,6 +409,13 @@ docker compose logs server -f    # логи сервера
 docker compose logs mqtt -f      # логи Mosquitto
 docker compose logs db -f        # логи PostgreSQL
 ```
+
+### Частые диагностические сигналы
+
+- `GET /favicon.ico` или `GET /flutter_service_worker.js` может давать `404` — это штатно, если файл отсутствует в `ui/dist`.
+- `reply.sendFile is not a function` — нештатная ошибка static plugin; в актуальной версии должна быть устранена.
+- Предупреждения Mosquitto про `world readable permissions` / `owner is not mosquitto` для `passwd`/`acl` — признак неверных прав на runtime-файлы. В текущей реализации сервер выставляет права/владельца при reconcile.
+- `DEVICE_ALREADY_PROVISIONED` при повторном provision одного `serial` (включая ранее decommissioned) — ожидаемое поведение текущего P1-контракта.
 
 Проверить reconcile:
 

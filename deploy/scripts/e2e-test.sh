@@ -42,23 +42,34 @@ check "version is 0.1.0" test "$(echo "$HEALTH" | jq -r '.data.version')" = "0.1
 echo ""
 echo "2. Provisioning devices"
 
-SERIALS=("SENS-TH-00001" "SENS-TH-00002" "SENS-TP-00003")
+BASE_ID=$(( (RANDOM % 9000) + 1000 ))
+SERIAL1=$(printf "SENS-TH-%05d" "$BASE_ID")
+SERIAL2=$(printf "SENS-TH-%05d" "$((BASE_ID + 1))")
+SERIAL3=$(printf "SENS-TP-%05d" "$((BASE_ID + 2))")
+SERIALS=("$SERIAL1" "$SERIAL2" "$SERIAL3")
 NAMES=("Морозилка 1" "Морозилка 2" "Зонд холодильника")
 POWERS=("battery" "battery" "wired")
 declare -A MQTT_USER MQTT_PASS
 
+# Best effort cleanup for idempotent reruns.
+for S in "${SERIALS[@]}"; do
+  curl -s -o /dev/null -w "%{http_code}" \
+    -H "Authorization: Bearer $API_TOKEN" \
+    -X DELETE "$API_URL/api/v1/devices/$S" >/dev/null 2>&1 || true
+done
+
 for i in 0 1 2; do
   RESP=$(api -X POST "$API_URL/api/v1/devices/provision" \
-    -d "{\"serial\":\"${SERIALS[$i]}\",\"displayName\":\"${NAMES[$i]}\",\"powerSource\":\"${POWERS[$i]}\"}" 2>/dev/null || echo '{"ok":false}')
+    -d "{\"serial\":\"${SERIALS[$i]}\",\"displayName\":\"${NAMES[$i]}\",\"powerSource\":\"${POWERS[$i]}\"}" 2>/dev/null || echo '{"ok":false,"error":{"code":"REQUEST_FAILED"}}')
 
-  OK=$(echo "$RESP" | jq -r '.ok')
+  OK=$(echo "$RESP" | jq -r '.ok' 2>/dev/null || echo "false")
   if [ "$OK" = "true" ]; then
     MQTT_USER[${SERIALS[$i]}]=$(echo "$RESP" | jq -r '.data.mqtt.username')
     MQTT_PASS[${SERIALS[$i]}]=$(echo "$RESP" | jq -r '.data.mqtt.password')
     check "Provisioned ${SERIALS[$i]}" true
   else
-    # Maybe already provisioned — that's ok for re-runs
-    check "Provisioned ${SERIALS[$i]} (or already exists)" echo "$RESP" | jq -r '.error.code' | grep -q 'ALREADY'
+    ERR_CODE=$(echo "$RESP" | jq -r '.error.code // ""' 2>/dev/null || true)
+    check "Provisioned ${SERIALS[$i]} (or already exists)" test "$ERR_CODE" = "DEVICE_ALREADY_PROVISIONED"
   fi
 done
 
@@ -70,7 +81,11 @@ DEV_COUNT=$(echo "$DEVICES" | jq '.data | length')
 check "GET /devices returns >= 3 devices" test "$DEV_COUNT" -ge 3
 
 for S in "${SERIALS[@]}"; do
-  check "Device $S in list" echo "$DEVICES" | jq -e ".data[] | select(.serial == \"$S\")" >/dev/null
+  if echo "$DEVICES" | jq -e ".data[] | select(.serial == \"$S\")" >/dev/null 2>&1; then
+    check "Device $S in list" true
+  else
+    check "Device $S in list" false
+  fi
 done
 
 # --- 4. Get single device ---
@@ -123,40 +138,56 @@ AUDIT=$(api "$API_URL/api/v1/audit-log?limit=20")
 check "GET /audit-log returns ok" test "$(echo "$AUDIT" | jq -r '.ok')" = "true"
 AUDIT_COUNT=$(echo "$AUDIT" | jq '.data | length')
 check "Audit log has entries" test "$AUDIT_COUNT" -gt 0
-check "Has device.provisioned action" echo "$AUDIT" | jq -e '.data[] | select(.action == "device.provisioned")' >/dev/null
+if echo "$AUDIT" | jq -e '.data[] | select(.action == "device.provisioned")' >/dev/null 2>&1; then
+  check "Has device.provisioned action" true
+else
+  check "Has device.provisioned action" false
+fi
 
 # --- 10. 404 for unknown device ---
 echo ""
 echo "10. Error cases"
-NOT_FOUND=$(curl -sf -o /dev/null -w "%{http_code}" \
+NOT_FOUND=$(curl -s -o /dev/null -w "%{http_code}" \
   -H "Authorization: Bearer $API_TOKEN" \
-  "$API_URL/api/v1/devices/SENS-XX-99999" 2>/dev/null || echo "404")
+  "$API_URL/api/v1/devices/SENS-XX-99999" 2>/dev/null || echo "000")
 check "Unknown device returns 404" test "$NOT_FOUND" = "404"
 
 # 401 without token
-UNAUTH=$(curl -sf -o /dev/null -w "%{http_code}" "$API_URL/api/v1/devices" 2>/dev/null || echo "401")
+UNAUTH=$(curl -s -o /dev/null -w "%{http_code}" "$API_URL/api/v1/devices" 2>/dev/null || echo "000")
 check "No token returns 401" test "$UNAUTH" = "401"
 
 # Duplicate provision
 DUP=$(api -X POST "$API_URL/api/v1/devices/provision" \
   -d "{\"serial\":\"${SERIALS[0]}\",\"powerSource\":\"battery\"}" 2>/dev/null || echo '409')
-check "Duplicate provision returns 409" echo "$DUP" | grep -q "ALREADY_PROVISIONED" || test "$DUP" = "409"
+if echo "$DUP" | grep -q "ALREADY_PROVISIONED" || test "$DUP" = "409"; then
+  check "Duplicate provision returns 409" true
+else
+  check "Duplicate provision returns 409" false
+fi
 
 # --- 11. Decommission ---
 echo ""
 echo "11. Decommission"
-DECOM=$(api -X DELETE "$API_URL/api/v1/devices/${SERIALS[2]}")
+DECOM=$(curl -s -H "Authorization: Bearer $API_TOKEN" -X DELETE "$API_URL/api/v1/devices/${SERIALS[2]}")
 check "DELETE /devices/${SERIALS[2]} returns ok" test "$(echo "$DECOM" | jq -r '.ok')" = "true"
 
 # Verify removed from list
 DEVICES_AFTER=$(api "$API_URL/api/v1/devices")
-check "Decommissioned device not in list" ! echo "$DEVICES_AFTER" | jq -e ".data[] | select(.serial == \"${SERIALS[2]}\")" >/dev/null
+if ! echo "$DEVICES_AFTER" | jq -e ".data[] | select(.serial == \"${SERIALS[2]}\")" >/dev/null 2>&1; then
+  check "Decommissioned device not in list" true
+else
+  check "Decommissioned device not in list" false
+fi
 
 # --- 12. Swagger ---
 echo ""
 echo "12. Swagger"
 check "Swagger UI accessible" curl -sf "$API_URL/api/docs" >/dev/null
-check "OpenAPI JSON accessible" curl -sf "$API_URL/api/docs/json" | jq -e '.openapi' >/dev/null
+if curl -sf "$API_URL/api/docs/json" | jq -e '.openapi' >/dev/null 2>&1; then
+  check "OpenAPI JSON accessible" true
+else
+  check "OpenAPI JSON accessible" false
+fi
 
 # --- 13. Backup/Restore ---
 echo ""

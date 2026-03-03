@@ -1,4 +1,4 @@
-import { eq, isNull, and, lt, sql } from 'drizzle-orm';
+import { eq, isNull, and, lt, sql, inArray } from 'drizzle-orm';
 import { type Db, devices, zones, locations, alertEvents } from '@sensor/db';
 import { parseSerial, ErrorCode, type PatchDevice } from '@sensor/shared';
 import { type AuditService } from './audit.js';
@@ -37,7 +37,7 @@ export function createDeviceService(db: Db, audit: AuditService) {
             .from(alertEvents)
             .where(and(
               isNull(alertEvents.acknowledgedAt),
-              sql`${alertEvents.deviceId} = ANY(${deviceIds})`,
+              inArray(alertEvents.deviceId, deviceIds),
             ))
             .groupBy(alertEvents.deviceId)
         : [];
