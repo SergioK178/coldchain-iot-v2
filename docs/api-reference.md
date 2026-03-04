@@ -7,6 +7,8 @@
 **Версия API:** v1
 **Привязка:** MASTER-SPEC.md v3.1, scope P1
 
+> **Важно:** этот файл описывает **только P1 API contract**. P2-план и изменения API описаны в `docs/P2/P2-EVOLUTION.md` и `docs/P2/API-CHANGES.md`.
+
 ---
 
 ## 1. Общие правила

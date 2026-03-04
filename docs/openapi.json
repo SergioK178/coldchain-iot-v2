@@ -3,7 +3,8 @@
   "info": {
     "title": "IoT Sensor Platform API",
     "version": "0.1.0",
-    "description": "Self-hosted IoT sensor monitoring platform for HoReCa and retail. P1 contract."
+    "description": "Self-hosted IoT sensor monitoring platform for HoReCa and retail. P1 contract.",
+    "x-contract-scope": "P1-only"
   },
   "servers": [
     {
