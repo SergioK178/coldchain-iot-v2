@@ -1,12 +1,16 @@
 import { loadEnv } from './config.js';
-import { runMigrations, createDb, seed } from '@sensor/db';
+import { runMigrations, createDb, seed, users } from '@sensor/db';
 import { buildApp } from './app.js';
 import { generateMosquittoHash } from './lib/mosquitto-files.js';
 import { reconcileMosquitto } from './services/provision.js';
 import { createAuditService } from './services/audit.js';
+import { hashPassword } from './lib/auth.js';
 
 async function main() {
   const env = loadEnv();
+  if (env.API_TOKEN) {
+    console.warn('API_TOKEN is enabled (deprecated fallback in P2). Prefer JWT user auth where possible.');
+  }
 
   // 1. Migrate
   console.log('Running migrations...');
@@ -16,7 +20,17 @@ async function main() {
   // 2. Seed
   console.log('Running seed...');
   const { db, sql } = createDb(env.DATABASE_URL);
-  await seed(db);
+  const seedOptions: { adminEmail?: string; adminPasswordHash?: string } = {};
+  if (env.ADMIN_EMAIL && env.ADMIN_PASSWORD) {
+    seedOptions.adminEmail = env.ADMIN_EMAIL;
+    seedOptions.adminPasswordHash = await hashPassword(env.ADMIN_PASSWORD);
+  } else {
+    const userCount = await db.select({ id: users.id }).from(users).limit(1);
+    if (userCount.length === 0) {
+      console.warn('No users in DB and ADMIN_EMAIL/ADMIN_PASSWORD not set — login disabled, use API_TOKEN only.');
+    }
+  }
+  await seed(db, seedOptions);
   console.log('Seed complete.');
 
   // 3. Generate admin password hash for Mosquitto

@@ -1,0 +1,16 @@
+{
+  "/_not-found/page": "app/_not-found/page.js",
+  "/alerts/page": "app/alerts/page.js",
+  "/devices/[serial]/page": "app/devices/[serial]/page.js",
+  "/api/proxy/route": "app/api/proxy/route.js",
+  "/devices/page": "app/devices/page.js",
+  "/export/page": "app/export/page.js",
+  "/locations/[id]/page": "app/locations/[id]/page.js",
+  "/api/auth/[...path]/route": "app/api/auth/[...path]/route.js",
+  "/locations/page": "app/locations/page.js",
+  "/login/page": "app/login/page.js",
+  "/page": "app/page.js",
+  "/onboard/page": "app/onboard/page.js",
+  "/settings/page": "app/settings/page.js",
+  "/settings/telegram/page": "app/settings/telegram/page.js"
+}

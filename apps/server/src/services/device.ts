@@ -13,6 +13,7 @@ export function createDeviceService(db: Db, audit: AuditService) {
           zoneName: zones.name,
           locationName: locations.name,
           powerSource: devices.powerSource,
+          calibrationOffsetC: devices.calibrationOffsetC,
           lastSeenAt: devices.lastSeenAt,
           lastTemperatureC: devices.lastTemperatureC,
           lastHumidityPct: devices.lastHumidityPct,
@@ -48,12 +49,13 @@ export function createDeviceService(db: Db, audit: AuditService) {
         const { type } = parseSerial(r.serial);
         const hasUnackAlert = (alertMap.get(r.deviceId) ?? 0) > 0;
         return {
-          serial: r.serial,
+        serial: r.serial,
           deviceType: type,
           displayName: r.displayName,
           zoneName: r.zoneName,
           locationName: r.locationName,
           powerSource: r.powerSource,
+          calibrationOffsetC: r.calibrationOffsetC ?? 0,
           lastSeenAt: r.lastSeenAt?.toISOString() ?? null,
           lastTemperatureC: r.lastTemperatureC,
           lastHumidityPct: r.lastHumidityPct,

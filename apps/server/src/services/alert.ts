@@ -1,5 +1,5 @@
-import { eq, and, isNull, desc, gte, sql } from 'drizzle-orm';
-import { type Db, alertRules, alertEvents, devices, zones, locations } from '@sensor/db';
+import { eq, and, isNull, isNotNull, desc, gte, sql } from 'drizzle-orm';
+import { type Db, alertRules, alertEvents, devices, zones, locations, users } from '@sensor/db';
 import {
   type CreateAlertRule,
   type PatchAlertRule,
@@ -8,16 +8,18 @@ import {
   ErrorCode,
 } from '@sensor/shared';
 import { type AuditService } from './audit.js';
-import { httpPost } from '../lib/callback.js';
+import { type WebhookService } from './webhook.js';
+import { sendTelegramMessage, formatAlertMessage } from '../lib/telegram-send.js';
 
 export interface AlertDeps {
   db: Db;
   audit: AuditService;
-  callbackUrl?: string;
+  webhookService: WebhookService;
+  telegramBotToken?: string;
 }
 
 export function createAlertService(deps: AlertDeps) {
-  const { db, audit } = deps;
+  const { db, audit, telegramBotToken } = deps;
 
   return {
     /**
@@ -90,66 +92,52 @@ export function createAlertService(deps: AlertDeps) {
           },
         });
 
-        // A5–A6: callback
-        if (deps.callbackUrl) {
-          await this.sendCallback(event.id, deviceId, rule, value, reading.timestamp);
+        // P2: emit to webhook engine (HMAC-signed, retry)
+        const [deviceRow] = await db
+          .select({
+            serial: devices.serial,
+            displayName: devices.displayName,
+            zoneName: zones.name,
+            locationName: locations.name,
+          })
+          .from(devices)
+          .leftJoin(zones, eq(devices.zoneId, zones.id))
+          .leftJoin(locations, eq(zones.locationId, locations.id))
+          .where(eq(devices.id, deviceId));
+
+        const payload = {
+          event: 'alert.triggered',
+          triggeredAt: new Date().toISOString(),
+          device: {
+            serial: deviceRow?.serial,
+            displayName: deviceRow?.displayName,
+            zoneName: deviceRow?.zoneName,
+            locationName: deviceRow?.locationName,
+          },
+          rule: {
+            metric: rule.metric,
+            operator: rule.operator,
+            threshold: rule.threshold,
+          },
+          reading: {
+            value,
+            timestamp: reading.timestamp.toISOString(),
+          },
+        };
+        deps.webhookService.emit('alert.triggered', payload).catch(() => {});
+
+        if (telegramBotToken) {
+          const withTelegram = await db
+            .select({ telegramChatId: users.telegramChatId })
+            .from(users)
+            .where(isNotNull(users.telegramChatId));
+          const text = formatAlertMessage(payload);
+          for (const u of withTelegram) {
+            if (u.telegramChatId) {
+              sendTelegramMessage(telegramBotToken, u.telegramChatId, text).catch(() => {});
+            }
+          }
         }
-      }
-    },
-
-    async sendCallback(
-      eventId: string,
-      deviceId: string,
-      rule: typeof alertRules.$inferSelect,
-      readingValue: number,
-      readingTimestamp: Date,
-    ) {
-      // Fetch device info for callback payload
-      const [device] = await db
-        .select({
-          serial: devices.serial,
-          displayName: devices.displayName,
-          zoneName: zones.name,
-          locationName: locations.name,
-        })
-        .from(devices)
-        .leftJoin(zones, eq(devices.zoneId, zones.id))
-        .leftJoin(locations, eq(zones.locationId, locations.id))
-        .where(eq(devices.id, deviceId));
-
-      const body = {
-        event: 'alert.triggered',
-        triggeredAt: new Date().toISOString(),
-        device: {
-          serial: device?.serial,
-          displayName: device?.displayName,
-          zoneName: device?.zoneName,
-          locationName: device?.locationName,
-        },
-        rule: {
-          metric: rule.metric,
-          operator: rule.operator,
-          threshold: rule.threshold,
-        },
-        reading: {
-          value: readingValue,
-          timestamp: readingTimestamp.toISOString(),
-        },
-      };
-
-      const result = await httpPost(deps.callbackUrl!, body, 5000);
-
-      // A6: update event with callback result
-      if (result) {
-        await db
-          .update(alertEvents)
-          .set({ callbackAttempted: true, callbackResponseCode: result.statusCode })
-          .where(eq(alertEvents.id, eventId));
-      } else {
-        await db
-          .update(alertEvents)
-          .set({ callbackAttempted: false, callbackResponseCode: null })
-          .where(eq(alertEvents.id, eventId));
       }
     },
 

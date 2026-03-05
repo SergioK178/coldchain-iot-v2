@@ -9,9 +9,22 @@ import {
   DEVICE_TYPES,
 } from '@sensor/shared';
 
+function requireOperator(request: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply): boolean {
+  const role = request.user?.role;
+  if (role !== 'admin' && role !== 'operator') {
+    reply.code(403).send({
+      ok: false,
+      error: { code: ErrorCode.FORBIDDEN, message: 'Operator or admin role required' },
+    });
+    return false;
+  }
+  return true;
+}
+
 export async function alertRulesRoutes(app: FastifyInstance) {
   // POST /api/v1/devices/:serial/alert-rules
   app.post('/api/v1/devices/:serial/alert-rules', async (request, reply) => {
+    if (!requireOperator(request, reply)) return;
     const { serial } = request.params as { serial: string };
     const parsed = CreateAlertRuleSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -54,7 +67,7 @@ export async function alertRulesRoutes(app: FastifyInstance) {
       });
     }
 
-    const actor = (request.query as { actor?: string }).actor || 'system';
+    const actor = request.actor ?? 'api_token';
     const rule = await app.alertService.createRule(device.id, parsed.data, actor);
 
     return reply.code(201).send({ ok: true, data: rule });
@@ -82,6 +95,7 @@ export async function alertRulesRoutes(app: FastifyInstance) {
 
   // PATCH /api/v1/alert-rules/:id
   app.patch('/api/v1/alert-rules/:id', async (request, reply) => {
+    if (!requireOperator(request, reply)) return;
     const { id } = request.params as { id: string };
     const parsed = PatchAlertRuleSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -91,7 +105,7 @@ export async function alertRulesRoutes(app: FastifyInstance) {
       });
     }
 
-    const actor = (request.query as { actor?: string }).actor || 'system';
+    const actor = request.actor ?? 'api_token';
     const result = await app.alertService.patchRule(id, parsed.data, actor);
 
     if ('error' in result) {
@@ -106,8 +120,9 @@ export async function alertRulesRoutes(app: FastifyInstance) {
 
   // DELETE /api/v1/alert-rules/:id
   app.delete('/api/v1/alert-rules/:id', async (request, reply) => {
+    if (!requireOperator(request, reply)) return;
     const { id } = request.params as { id: string };
-    const actor = (request.query as { actor?: string }).actor || 'system';
+    const actor = request.actor ?? 'api_token';
     const result = await app.alertService.deleteRule(id, actor);
 
     if ('error' in result) {

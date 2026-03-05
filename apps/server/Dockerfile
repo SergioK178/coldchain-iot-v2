@@ -1,6 +1,8 @@
+# syntax=docker/dockerfile:1.7
 FROM node:22-alpine AS builder
 
 RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
+ENV PNPM_STORE_DIR=/pnpm/store
 
 WORKDIR /app
 
@@ -11,7 +13,8 @@ COPY packages/db/package.json packages/db/
 COPY apps/server/package.json apps/server/
 COPY ui/package.json ui/
 
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm install --frozen-lockfile --prefer-offline
 
 # Copy source
 COPY packages/shared/ packages/shared/

@@ -30,6 +30,18 @@ async function getActiveDevicesForMosquitto(db: Db) {
 }
 
 export async function reconcileMosquitto(deps: ProvisionDeps) {
+  const reloadUrl = deps.env.MOSQUITTO_RELOAD_URL;
+
+  if (reloadUrl) {
+    // F6: sidecar does rebuild + SIGHUP; no docker.sock, no local file write
+    const res = await fetch(reloadUrl, { method: 'POST' });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Mosquitto reload failed: ${res.status} ${body}`);
+    }
+    return;
+  }
+
   const activeDevices = await getActiveDevicesForMosquitto(deps.db);
 
   await rebuildMosquittoFiles({

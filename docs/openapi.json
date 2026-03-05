@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "info": {
     "title": "IoT Sensor Platform API",
-    "version": "0.1.0",
-    "description": "Self-hosted IoT sensor monitoring platform for HoReCa and retail. P1 contract.",
-    "x-contract-scope": "P1-only"
+    "version": "0.2.0",
+    "description": "Combined current contract (P1 + implemented P2)",
+    "x-contract-scope": "relevant-p1-p2"
   },
   "servers": [
     {
@@ -14,7 +14,10 @@
   ],
   "security": [
     {
-      "bearerAuth": []
+      "jwtBearer": []
+    },
+    {
+      "apiTokenBearer": []
     }
   ],
   "components": {
@@ -23,11 +26,27 @@
         "type": "http",
         "scheme": "bearer",
         "description": "Static API token from .env (API_TOKEN)"
+      },
+      "jwtBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "JWT access token (P2 user auth)"
+      },
+      "apiTokenBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Legacy API_TOKEN fallback (deprecated)"
+      },
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "refreshToken",
+        "description": "HTTP-only refresh cookie"
       }
     },
     "responses": {
       "Unauthorized": {
-        "description": "Missing or invalid API token",
+        "description": "Unauthorized",
         "content": {
           "application/json": {
             "schema": {
@@ -67,7 +86,26 @@
         }
       },
       "InternalError": {
-        "description": "Internal server error",
+        "description": "Internal error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "Too many requests",
+        "headers": {
+          "Retry-After": {
+            "description": "Seconds to wait before retry",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
         "content": {
           "application/json": {
             "schema": {
@@ -439,6 +477,13 @@
             "items": {
               "$ref": "#/components/schemas/Reading"
             }
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opaque pagination cursor; null when no more data"
           }
         }
       },
@@ -839,6 +884,29 @@
             }
           }
         }
+      },
+      "GenericOk": {
+        "type": "object",
+        "required": [
+          "ok",
+          "data"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "data": {
+            "type": [
+              "object",
+              "array",
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          }
+        }
       }
     }
   },
@@ -1103,8 +1171,8 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 1000,
-              "default": 100
+              "maximum": 100,
+              "default": 50
             }
           },
           {
@@ -1122,6 +1190,15 @@
               "type": "string",
               "format": "date-time"
             }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque cursor from previous page"
           }
         ],
         "responses": {
@@ -1524,6 +1601,585 @@
           }
         }
       }
+    },
+    "/auth/login": {
+      "post": {
+        "summary": "Login by email/password",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Logged in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "summary": "Rotate refresh token and issue new access token",
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Refreshed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "summary": "Logout and clear refresh cookie",
+        "responses": {
+          "200": {
+            "description": "Logged out",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/users/me": {
+      "get": {
+        "summary": "Get current user",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/users/me/password": {
+      "patch": {
+        "summary": "Change current user password",
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/users": {
+      "get": {
+        "summary": "List users (admin)",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create user (admin)",
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/users/{id}": {
+      "patch": {
+        "summary": "Update user (admin)",
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete user (admin)",
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/locations": {
+      "get": {
+        "summary": "List locations",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create location (admin)",
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/locations/{id}": {
+      "patch": {
+        "summary": "Update location (admin)",
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete location (admin)",
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/locations/{id}/zones": {
+      "get": {
+        "summary": "List zones by location",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create zone (admin)",
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/zones/{id}": {
+      "patch": {
+        "summary": "Update zone (admin)",
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete zone (admin)",
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhooks": {
+      "get": {
+        "summary": "List webhooks (admin)",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create webhook (admin)",
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          }
+        },
+        "description": "Webhook URL must be public http/https; localhost/private/link-local/metadata targets are rejected."
+      }
+    },
+    "/webhooks/{id}": {
+      "patch": {
+        "summary": "Update webhook (admin)",
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          }
+        },
+        "description": "Webhook URL updates are revalidated with the same SSRF policy."
+      },
+      "delete": {
+        "summary": "Delete webhook (admin)",
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhooks/{id}/deliveries": {
+      "get": {
+        "summary": "List webhook deliveries (admin)",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhooks/{id}/test": {
+      "post": {
+        "summary": "Send test webhook delivery (admin)",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/{serial}/calibrations": {
+      "post": {
+        "summary": "Create calibration record (SHOULD/F10)",
+        "x-priority": "SHOULD",
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List calibration records (SHOULD/F10)",
+        "x-priority": "SHOULD",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/me/telegram-code": {
+      "post": {
+        "summary": "Create one-time Telegram linking code (JWT only)",
+        "responses": {
+          "200": {
+            "description": "Code created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/users/me/telegram": {
+      "patch": {
+        "summary": "Unlink Telegram from current user (JWT only)",
+        "responses": {
+          "200": {
+            "description": "Unlinked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "403": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/export/readings": {
+      "get": {
+        "summary": "Export readings for device/location and period (CSV implemented, PDF backlog)",
+        "parameters": [
+          {
+            "name": "deviceSerial",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "locationId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "csv",
+                "pdf"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "CSV stream (text/csv) when format=csv"
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
     }
-  }
+  },
+  "x-doc-sources": [
+    "docs/openapi-p1.json",
+    "docs/P2/openapi-p2.json"
+  ]
 }

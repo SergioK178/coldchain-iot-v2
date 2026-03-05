@@ -115,7 +115,7 @@
 
 | # | Вопрос | Решение | Обоснование |
 |---|---|---|---|
-| D1 | Telegram-бот: часть server или отдельный контейнер? | **Часть server (Fastify process)** | Проще deploy, доступ к БД и сервисам без IPC. grammY в polling mode не конфликтует с Fastify |
+| D1 | Telegram-бот: часть server или отдельный контейнер? | **Часть server (Fastify process)** | Проще deploy, доступ к БД и сервисам без IPC. Telegram Bot API polling не конфликтует с Fastify |
 | D2 | Next.js: один порт (через Caddy) или два? | **Два порта по умолчанию. Caddy опционален (profile `https`)** | Не навязываем лишний контейнер для LAN. Клиент может использовать Caddy если хочет единую точку входа или HTTPS |
 | D3 | Первый admin: env seed или UI wizard? | **Env seed only** (`ADMIN_EMAIL`, `ADMIN_PASSWORD`) | Консистентно с P1 моделью (всё через env). Wizard — лишняя ветка кода с edge cases |
 | D4 | API_TOKEN deprecation | **API_TOKEN остаётся на весь P2 как deprecated machine-to-machine fallback** (роль admin). Provision-cli, simulator, существующие скрипты работают без изменений. Убирать — решение P3 |
@@ -170,7 +170,7 @@ refresh_tokens
 
 - `HttpOnly=true`
 - `SameSite=Lax`
-- `Path=/api/auth`
+- `Path=/`
 - `Secure=true` при HTTPS (Caddy), `Secure=false` только в локальном HTTP dev/LAN
 - TTL: 7 дней
 
@@ -188,8 +188,8 @@ refresh_tokens
 
 **Actor resolution (replaces P1 `?actor=` mechanism):**
 - JWT requests: `actor = users.email`
-- API_TOKEN requests: `actor = "api_token"`
-- `?actor=` query parameter: **no longer supported** for JWT requests. Для API_TOKEN requests — сохраняется как deprecated fallback (default: `"api_token"`)
+- API_TOKEN requests: `actor = "api_token"` (immutable)
+- `?actor=` query parameter does not affect audit actor
 
 **Role enforcement:**
 
@@ -313,6 +313,7 @@ POST   /api/v1/webhooks/:id/test            → send test event (admin)
 ### 6.4 Mosquitto auth без docker.sock (F6)
 
 **Status: механизм фиксируется после S1 (единственное техническое решение в P2, оставленное open до spike).**
+Текущее решение и чек-лист закрытия: `docs/P2/F6-DECISION.md`.
 
 **Preferred target:** Mosquitto Dynamic Security Plugin (built into Mosquitto 2.x).
 
@@ -333,7 +334,7 @@ Sidecar container (`mosquitto-auth-sync`): lightweight Node.js process that watc
 
 ### 6.5 Telegram-бот (F4) — SHOULD
 
-**Decision:** part of Fastify server process, not separate container. grammY in polling mode. Env-gated: if `TELEGRAM_BOT_TOKEN` not set → bot does not start, no error.
+**Decision:** part of Fastify server process, not separate container. Telegram Bot API polling mode. Env-gated: if `TELEGRAM_BOT_TOKEN` not set → bot does not start, no error.
 
 **Local-first exception:** outgoing HTTPS to `api.telegram.org`. Only alert notification data sent (serial, name, value, threshold). No bulk data export.
 
@@ -384,6 +385,7 @@ GET    /api/v1/devices/:serial/calibrations    → history
 **Architecture:**
 
 Next.js as separate container (`apps/web`). Fastify continues on `:8080` (API only, no static serving). Next.js on `:3000`.
+UI implementation baseline (approved stack and design rules): `docs/P2/UI-SPEC.md`.
 
 Without Caddy: two ports exposed. With Caddy (F12): single port, path routing.
 
@@ -517,7 +519,7 @@ All P1 endpoints remain. No breaking changes to existing request/response shapes
 | Existing endpoint | P2 change | Breaking? |
 |---|---|---|
 | All mutating endpoints | Auth: JWT or Bearer API_TOKEN (fallback) | No |
-| `?actor=` on mutating endpoints | Deprecated fallback только для API_TOKEN requests. Для JWT requests не поддерживается | No (legacy machine path сохранён) |
+| `?actor=` on mutating endpoints | Ignored for audit actor in P2 hardening. Actor is derived from auth context only | No |
 | `GET /devices` response | Added `calibrationOffsetC` field | No (additive) |
 | `GET .../readings` | Added `cursor` in response | No (additive) |
 | `GET /alert-events` | Added `cursor` in response | No (additive) |
@@ -665,7 +667,7 @@ CREATE INDEX calibration_records_device_idx
 | S2 | Webhook retry on PostgreSQL | **Yes** | F5 | Verify: polling `webhook_deliveries WHERE nextRetryAt < now()` every 10s — overhead with 100+ pending. Expected: fine at P2 scale. If not → consider `pg_cron` or accept Redis in P2 |
 | R1 | Next.js SSR + Fastify API latency | No | – | Internal Docker network, expected <5ms. Monitor during development |
 | R2 | argon2 native module in Docker | No | – | `argon2` npm requires native build. Ensure Dockerfile has build tools in builder stage |
-| R3 | Telegram bot polling in same process | No | – | grammY polling is non-blocking. Monitor event loop lag |
+| R3 | Telegram bot polling in same process | No | – | Telegram polling is non-blocking. Monitor event loop lag |
 
 **Spikes S1 and S2 must complete before main P2 development begins.**
 
@@ -763,7 +765,7 @@ Dependencies: Phases 1, 3, 4
 ```
 Dependencies: Phases 1–5
 
-[ ] F4: Telegram bot (grammY, polling, linking flow, alert notifications)
+[ ] F4: Telegram bot (polling, linking flow, alert notifications)
 [ ] F8b: QR onboard (html5-qrcode) как ускоритель над F8a manual form
 [ ] F9: CSV/PDF export (backend endpoint + UI page)
 [ ] F11: Cursor-based pagination (readings, alert-events, audit-log, deliveries)

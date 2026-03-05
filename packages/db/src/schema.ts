@@ -104,3 +104,61 @@ export const auditLog = pgTable('audit_log', {
   actor: varchar('actor', { length: 255 }).notNull(),
   details: jsonb('details'),
 });
+
+// --- users (P2) ---
+export const users = pgTable('users', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  passwordHash: varchar('password_hash', { length: 255 }).notNull(),
+  name: varchar('name', { length: 255 }),
+  role: varchar('role', { length: 20 }).notNull().default('viewer'),
+  telegramChatId: varchar('telegram_chat_id', { length: 50 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+// --- refresh_tokens (P2) ---
+export const refreshTokens = pgTable('refresh_tokens', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  tokenHash: varchar('token_hash', { length: 255 }).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+// --- webhooks (P2) ---
+export const webhooks = pgTable('webhooks', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  url: varchar('url', { length: 500 }).notNull(),
+  secret: varchar('secret', { length: 255 }).notNull(),
+  events: text('events').array().notNull(),
+  isActive: boolean('is_active').default(true),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+// --- webhook_deliveries (P2) ---
+export const webhookDeliveries = pgTable('webhook_deliveries', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  webhookId: uuid('webhook_id').references(() => webhooks.id, { onDelete: 'cascade' }).notNull(),
+  event: varchar('event', { length: 100 }).notNull(),
+  payload: jsonb('payload').notNull(),
+  attempt: integer('attempt').notNull().default(1),
+  responseCode: integer('response_code'),
+  error: text('error'),
+  nextRetryAt: timestamp('next_retry_at', { withTimezone: true }),
+  deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+});
+
+// --- calibration_records (P2) ---
+export const calibrationRecords = pgTable('calibration_records', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  deviceId: uuid('device_id').references(() => devices.id).notNull(),
+  calibratedAt: timestamp('calibrated_at', { withTimezone: true }).notNull(),
+  referenceValueC: real('reference_value_c').notNull(),
+  deviceValueC: real('device_value_c').notNull(),
+  offsetC: real('offset_c').notNull(),
+  calibratedBy: uuid('calibrated_by').references(() => users.id),
+  notes: text('notes'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+});

@@ -1,9 +1,21 @@
 import { FastifyInstance } from 'fastify';
 import { ProvisionRequestSchema, PatchDeviceSchema, ErrorCode, parseSerial } from '@sensor/shared';
 
+function requireAdmin(request: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply): boolean {
+  if (request.user?.role !== 'admin') {
+    reply.code(403).send({
+      ok: false,
+      error: { code: ErrorCode.FORBIDDEN, message: 'Admin role required' },
+    });
+    return false;
+  }
+  return true;
+}
+
 export async function deviceRoutes(app: FastifyInstance) {
   // POST /api/v1/devices/provision
   app.post('/api/v1/devices/provision', async (request, reply) => {
+    if (!requireAdmin(request, reply)) return;
     const parsed = ProvisionRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       // Distinguish serial format vs general validation
@@ -33,7 +45,7 @@ export async function deviceRoutes(app: FastifyInstance) {
       });
     }
 
-    const actor = (request.query as { actor?: string }).actor || 'system';
+    const actor = request.actor ?? 'api_token';
 
     const result = await app.provision.provisionDevice(
       app.provisionDeps,
@@ -77,6 +89,7 @@ export async function deviceRoutes(app: FastifyInstance) {
 
   // PATCH /api/v1/devices/:serial
   app.patch('/api/v1/devices/:serial', async (request, reply) => {
+    if (!requireAdmin(request, reply)) return;
     const { serial } = request.params as { serial: string };
     const parsed = PatchDeviceSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -85,7 +98,7 @@ export async function deviceRoutes(app: FastifyInstance) {
         error: { code: ErrorCode.VALIDATION_ERROR, message: parsed.error.message },
       });
     }
-    const actor = (request.query as { actor?: string }).actor || 'system';
+    const actor = request.actor ?? 'api_token';
     const result = await app.deviceService.patch(serial, parsed.data, actor);
     if ('error' in result) {
       return reply.code(404).send({
@@ -98,8 +111,9 @@ export async function deviceRoutes(app: FastifyInstance) {
 
   // DELETE /api/v1/devices/:serial
   app.delete('/api/v1/devices/:serial', async (request, reply) => {
+    if (!requireAdmin(request, reply)) return;
     const { serial } = request.params as { serial: string };
-    const actor = (request.query as { actor?: string }).actor || 'system';
+    const actor = request.actor ?? 'api_token';
     const result = await app.provision.decommissionDevice(
       app.provisionDeps,
       serial,

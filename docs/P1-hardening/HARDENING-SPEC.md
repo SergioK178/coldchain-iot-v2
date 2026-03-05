@@ -251,7 +251,7 @@ The following files must be reviewed and synchronized during hardening:
 
 - `docs/MASTER-SPEC.md`
 - `docs/api-reference.md`
-- `docs/openapi.json` (only if any API examples or constraints change)
+- `docs/openapi-p1.json` (only if any P1 API examples or constraints change)
 - `README.md`
 - `FIRMWARE-GUIDE.md`
 - simulator CLI help / usage docs

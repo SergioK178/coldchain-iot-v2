@@ -1,12 +1,13 @@
-# P2 API Changes (Planned)
+# P2 API Changes (Current State)
 
-Этот документ — краткая карта изменений API в P2 относительно P1.
+Этот документ — краткая карта изменений API в P2 относительно P1 (по текущей реализации).
 Детальный source of truth: `docs/P2/P2-EVOLUTION.md`.
 
 ## Scope note
 
-- `docs/api-reference.md` и `docs/openapi.json` описывают **P1-only** контракт.
-- Текущий файл перечисляет группы новых/изменённых контрактов, ожидаемых в P2.
+- `docs/api-reference.md` и `docs/openapi.json` описывают **актуальный объединённый контракт (P1 + P2)**.
+- `docs/openapi-p1.json` фиксирует только P1 baseline.
+- `docs/P2/openapi-p2.json` фиксирует только P2 additions/changes.
 
 ## New endpoint groups in P2
 

@@ -14,16 +14,27 @@ services:
       retries: 5
 
   mqtt:
-    image: eclipse-mosquitto:2.0.20
+    # F6: combined image runs Mosquitto + auth-sync (no docker.sock); server triggers reload via HTTP.
+    image: sensor-mosquitto-auth-sync:0.1.0
+    build:
+      context: ..
+      dockerfile: tools/mosquitto-auth-sync/Dockerfile
     container_name: mqtt
     restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      DATABASE_URL: "postgresql://${DB_USER:-sensors}:${DB_PASSWORD}@db:5432/${DB_NAME:-sensors}"
+      MQTT_ADMIN_USER: "${MQTT_ADMIN_USER:-server}"
+      MQTT_ADMIN_PASSWORD: "${MQTT_ADMIN_PASSWORD:?error: set MQTT_ADMIN_PASSWORD in .env}"
+      MOSQUITTO_DATA_DIR: "/data"
+      RELOAD_PORT: "9080"
     volumes:
-      - ./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-      - ./data/mosquitto:/mosquitto/config/runtime
+      - ./data/mosquitto:/data
     ports:
       - "${MQTT_PORT:-1883}:1883"
     healthcheck:
-      test: ["CMD-SHELL", "mosquitto_sub -t '$$SYS/broker/uptime' -C 1 -W 3 || exit 0"]
+      test: ["CMD-SHELL", "pidof mosquitto >/dev/null"]
       interval: 10s
       retries: 3
 
@@ -43,22 +54,58 @@ services:
       MQTT_URL: "mqtt://mqtt:1883"
       MQTT_ADMIN_USER: "${MQTT_ADMIN_USER:-server}"
       MQTT_ADMIN_PASSWORD: "${MQTT_ADMIN_PASSWORD:?error: set MQTT_ADMIN_PASSWORD in .env}"
-      API_TOKEN: "${API_TOKEN:?error: set API_TOKEN in .env}"
+      JWT_SECRET: "${JWT_SECRET:?error: set JWT_SECRET for P2 in .env}"
+      API_TOKEN: "${API_TOKEN:-}"
+      ADMIN_EMAIL: "${ADMIN_EMAIL:-}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"
       ALERT_CALLBACK_URL: "${ALERT_CALLBACK_URL:-}"
       DEVICE_OFFLINE_TIMEOUT_SEC: "${DEVICE_OFFLINE_TIMEOUT_SEC:-300}"
-      MOSQUITTO_DATA_DIR: "/mosquitto-data"
-      MOSQUITTO_CONTAINER_NAME: "mqtt"
-      DOCKER_SOCKET: "/var/run/docker.sock"
+      AUTH_RATE_LIMIT_LOGIN_MAX: "${AUTH_RATE_LIMIT_LOGIN_MAX:-8}"
+      AUTH_RATE_LIMIT_LOGIN_WINDOW_SEC: "${AUTH_RATE_LIMIT_LOGIN_WINDOW_SEC:-300}"
+      AUTH_RATE_LIMIT_REFRESH_MAX: "${AUTH_RATE_LIMIT_REFRESH_MAX:-20}"
+      AUTH_RATE_LIMIT_REFRESH_WINDOW_SEC: "${AUTH_RATE_LIMIT_REFRESH_WINDOW_SEC:-300}"
+      AUTH_RATE_LIMIT_BLOCK_SEC: "${AUTH_RATE_LIMIT_BLOCK_SEC:-300}"
+      AUTH_COOKIE_SECURE: "${AUTH_COOKIE_SECURE:-auto}"
+      WEBHOOK_ALLOWLIST_HOSTS: "${WEBHOOK_ALLOWLIST_HOSTS:-}"
+      MOSQUITTO_RELOAD_URL: "http://mqtt:9080/reload"
     volumes:
       - ./data/mosquitto:/mosquitto-data
-      - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
       - "${HTTP_PORT:-8080}:8080"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/v1/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/api/v1/health || exit 1"]
       interval: 10s
       retries: 5
       start_period: 30s
+
+  web:
+    image: sensor-web-local:0.2.0
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+    environment:
+      API_URL: "http://server:8080"
+      NEXT_PUBLIC_API_URL: "${PUBLIC_API_URL:-http://localhost:8080}"
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+
+  caddy:
+    image: caddy:2.9
+    profiles: ["https"]
+    restart: unless-stopped
+    depends_on:
+      - server
+      - web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/caddy:/data
 
 volumes: {}
 # Все данные в ./data/ на хосте (bind mounts), не named volumes.
