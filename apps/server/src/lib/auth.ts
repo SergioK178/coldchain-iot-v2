@@ -21,7 +21,12 @@ export async function hashPassword(password: string): Promise<string> {
 }
 
 export async function verifyPassword(hash: string, password: string): Promise<boolean> {
-  return argon2.verify(hash, password);
+  try {
+    return await argon2.verify(hash, password);
+  } catch {
+    // Old/invalid hashes should be treated as wrong credentials, not a 500.
+    return false;
+  }
 }
 
 export async function signAccessToken(

@@ -1,5 +1,6 @@
 services:
   db:
+    pull_policy: missing
     image: timescale/timescaledb:2.17.2-pg16
     restart: unless-stopped
     environment:
@@ -7,14 +8,22 @@ services:
       POSTGRES_USER: "${DB_USER:-sensors}"
       POSTGRES_PASSWORD: "${DB_PASSWORD:?error: set DB_PASSWORD in .env}"
     volumes:
-      - ./data/postgres:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-sensors}"]
-      interval: 5s
-      retries: 5
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${DB_USER:-sensors} -d ${DB_NAME:-sensors} || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   mqtt:
     # F6: combined image runs Mosquitto + auth-sync (no docker.sock); server triggers reload via HTTP.
+    pull_policy: missing
     image: sensor-mosquitto-auth-sync:0.1.0
     build:
       context: ..
@@ -37,10 +46,16 @@ services:
       test: ["CMD-SHELL", "pidof mosquitto >/dev/null"]
       interval: 10s
       retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   server:
     # Default for local/dev: use locally built image to avoid pulling template GHCR path.
     # For staging/prod set a real registry image, e.g. ghcr.io/<org>/<repo>:<tag>.
+    pull_policy: missing
     image: sensor-server-local:0.1.0
     build:
       context: ..
@@ -77,8 +92,14 @@ services:
       interval: 10s
       retries: 5
       start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   web:
+    pull_policy: missing
     image: sensor-web-local:0.2.0
     build:
       context: ..
@@ -92,8 +113,14 @@ services:
       NEXT_PUBLIC_API_URL: "${PUBLIC_API_URL:-http://localhost:8080}"
     ports:
       - "${WEB_PORT:-3000}:3000"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   caddy:
+    pull_policy: missing
     image: caddy:2.9
     profiles: ["https"]
     restart: unless-stopped
@@ -106,6 +133,12 @@ services:
     volumes:
       - ./config/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./data/caddy:/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-volumes: {}
+volumes:
+  pgdata: {}
 # Все данные в ./data/ на хосте (bind mounts), не named volumes.

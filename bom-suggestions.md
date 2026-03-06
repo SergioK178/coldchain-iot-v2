@@ -218,3 +218,54 @@
 | Lead time / availability | Sourcing tracker / procurement appendix | Быстро устаревает, не часть инженерного baseline BOM |
 
 **Принцип:** в этом файле держим __только технический baseline__, в sourcing-файле — сроки и коммерцию.
+
+---
+
+## Список покупок (на 1 устройство)
+
+### Сенсор 1: SENS-TP (морозилка, temp-only)
+
+| Позиция | Что купить | Кол-во |
+|---|---|---:|
+| MCU/Radio | ESP32-C3-MINI-1U-N4 | 1 |
+| PMIC | TPS63900DSKR | 1 |
+| Антенна | 2.4 GHz antenna (Lite: внутренняя/PCB; Field: внешняя + U.FL/pigtail) | 1 |
+| Батарея | AA Li-FeS2 | 2 |
+| Держатель батарей | 2xAA holder/contacts | 1 |
+| Буфер питания | Low-ESR bulk capacitor (Lite: 220-470 uF; Field: 470 uF) | 1 |
+| PMIC обвязка | 10 uF + 22 uF + 2.2 uH | 1 set |
+| Battery sense | Divider + gating transistor | 1 set |
+| Программирование/сервис | Tag-Connect/pogo + reset/service pads | 1 set |
+| Защита | TVS/ESD on external lines | 1 set |
+| Температурный зонд | DS18B20-based hermetic probe, 1 m | 1 |
+| Подтяжка 1-Wire | 4.7 kOhm resistor | 1 |
+| Развязка сенсорной линии | 100 nF ceramic capacitor | 1 |
+| Защита линии зонда | TVS diode for probe line (Lite: optional, Field: mandatory) | 1 |
+| Корпус | Enclosure (Lite: простой; Field: IP67 polycarbonate) | 1 |
+| Уплотнение | Silicone/EPDM gasket (Field) | 1 |
+| Ввод кабеля | IP67 cable gland + strain relief (Field) | 1 |
+| Покрытие платы | Conformal coating process (Lite: optional; Field: mandatory) | 1 process |
+
+### Сенсор 2: SENS-TH (холодильник, temp+RH)
+
+| Позиция | Что купить | Кол-во |
+|---|---|---:|
+| MCU/Radio | ESP32-C3-MINI-1U-N4 | 1 |
+| PMIC | TPS63900DSKR | 1 |
+| Антенна | 2.4 GHz antenna (Lite: внутренняя/PCB; Field: внешняя + U.FL/pigtail) | 1 |
+| Батарея | AA Li-FeS2 | 2 |
+| Держатель батарей | 2xAA holder/contacts + retention fixture (Field) | 1 |
+| Буфер питания | Low-ESR bulk capacitor (Lite: 220-470 uF; Field: 470 uF) | 1 |
+| PMIC обвязка | 10 uF + 22 uF + 2.2 uH + MLCC near radio (Field) | 1 set |
+| Battery sense | Divider + gating transistor | 1 set |
+| Программирование/сервис | Tag-Connect/pogo + reset/service pads + test points | 1 set |
+| Защита | TVS/ESD on external lines + probe line protection | 1 set |
+| RH/T сенсор | HDC3022DEJR | 1 |
+| I2C подтяжки | 4.7 kOhm resistors (SDA + SCL) | 2 |
+| Локальная развязка RH | 100 nF ceramic capacitor | 1 |
+| RH тракт | ePTFE vent / dedicated RH air path | 1 |
+| Защита RH окна | Каплезащита мембраны (Field) | 1 |
+| Корпус | Enclosure (Lite: простой; Field: IP67 polycarbonate) | 1 |
+| Уплотнение | Silicone/EPDM gasket (Field) | 1 |
+| Ввод кабеля | IP67 cable gland + strain relief (Field) | 1 |
+| Покрытие платы | Conformal coating process (Lite: optional; Field: mandatory) | 1 process |

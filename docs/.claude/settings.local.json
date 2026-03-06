@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm install:*)",
+      "Bash(pnpm:*)",
+      "Bash(echo exit: $?:*)",
+      "Bash(rm:*)",
+      "Bash(npx drizzle-kit:*)",
+      "Bash(node:*)"
+    ]
+  }
+}

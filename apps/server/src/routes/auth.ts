@@ -56,7 +56,8 @@ export async function authRoutes(app: FastifyInstance) {
     if (request.protocol === 'https') return true;
     const proto = request.headers['x-forwarded-proto'];
     if (typeof proto === 'string' && proto.split(',')[0]?.trim().toLowerCase() === 'https') return true;
-    return process.env.NODE_ENV === 'production';
+    // In auto mode only set Secure when request is actually HTTPS.
+    return false;
   }
 
   function getClientIp(request: import('fastify').FastifyRequest): string {
