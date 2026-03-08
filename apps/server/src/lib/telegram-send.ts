@@ -24,7 +24,7 @@ export function formatAlertMessage(payload: {
   const r = payload.rule;
   const v = payload.reading?.value;
   const name = d?.displayName || d?.serial || '—';
-  const metric = r?.metric === 'temperature_c' ? 'Температура' : r?.metric === 'humidity_pct' ? 'Влажность' : r?.metric || '—';
+  const metric = r?.metric === 'temperature_c' ? 'Температура' : r?.metric === 'humidity_pct' ? 'Влажность' : r?.metric === 'battery_pct' ? 'Батарея' : r?.metric || '—';
   return `\u26A0 <b>Тревога</b>\nУстройство: ${escapeHtml(String(name))}\n${metric}: ${v ?? '—'} (порог: ${r?.threshold ?? '—'})`;
 }
 

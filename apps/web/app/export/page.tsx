@@ -10,12 +10,15 @@ import { toast } from 'sonner';
 
 type Device = { serial: string; displayName: string | null };
 type Location = { id: string; name: string };
+type Zone = { id: string; name: string; locationId: string };
 
 export default function ExportPage() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
+  const [zones, setZones] = useState<Zone[]>([]);
   const [deviceSerial, setDeviceSerial] = useState('');
   const [locationId, setLocationId] = useState('');
+  const [zoneId, setZoneId] = useState('');
   const [since, setSince] = useState('');
   const [until, setUntil] = useState('');
   const [loading, setLoading] = useState(true);
@@ -39,9 +42,27 @@ export default function ExportPage() {
     })();
   }, []);
 
+  useEffect(() => {
+    if (!locationId) {
+      setZones([]);
+      setZoneId('');
+      return;
+    }
+    let cancelled = false;
+    apiGet<Zone[]>(`/api/v1/locations/${locationId}/zones`).then((res) => {
+      if (!cancelled) {
+        setZones(res.data ?? []);
+        setZoneId('');
+      }
+    }).catch(() => {
+      if (!cancelled) setZones([]);
+    });
+    return () => { cancelled = true; };
+  }, [locationId]);
+
   const handleExport = async (format: 'csv' | 'pdf') => {
-    if (!deviceSerial && !locationId) {
-      toast.error('Выберите устройство или локацию');
+    if (!deviceSerial && !locationId && !zoneId) {
+      toast.error('Выберите устройство, зону или локацию');
       return;
     }
     if (!since || !until) {
@@ -50,7 +71,8 @@ export default function ExportPage() {
     }
     const params = new URLSearchParams();
     if (deviceSerial) params.set('deviceSerial', deviceSerial);
-    if (locationId) params.set('locationId', locationId);
+    else if (zoneId) params.set('zoneId', zoneId);
+    else if (locationId) params.set('locationId', locationId);
     params.set('since', since);
     params.set('until', until);
     params.set('format', format);
@@ -80,6 +102,15 @@ export default function ExportPage() {
         a.click();
         URL.revokeObjectURL(url);
         toast.success('CSV скачан');
+      } else if (contentType.includes('application/pdf')) {
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `readings_${since}_${until}.pdf`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast.success('PDF скачан');
       } else {
         const data = await res.json().catch(() => ({}));
         toast.error(data?.error?.message ?? 'Экспорт не выполнен');
@@ -108,7 +139,7 @@ export default function ExportPage() {
         <CardHeader>
           <CardTitle>Период и фильтры</CardTitle>
           <CardDescription>
-            Укажите устройство или локацию и период (макс. 31 день). Экспорт ограничен 5000 записей.
+            Укажите устройство, зону или локацию и период (макс. 31 день). Экспорт ограничен 5000 записей.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -126,7 +157,7 @@ export default function ExportPage() {
             </select>
           </div>
           <div className="grid gap-2">
-            <Label>Локация (необязательно, если выбрано устройство)</Label>
+            <Label>Локация</Label>
             <select
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               value={locationId}
@@ -135,6 +166,20 @@ export default function ExportPage() {
               <option value="">—</option>
               {locations.map((l) => (
                 <option key={l.id} value={l.id}>{l.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="grid gap-2">
+            <Label>Зона (при выбранной локации)</Label>
+            <select
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={zoneId}
+              onChange={(e) => setZoneId(e.target.value)}
+              disabled={!locationId}
+            >
+              <option value="">Вся локация</option>
+              {zones.map((z) => (
+                <option key={z.id} value={z.id}>{z.name}</option>
               ))}
             </select>
           </div>
@@ -152,8 +197,8 @@ export default function ExportPage() {
             <Button onClick={() => handleExport('csv')} disabled={!!downloading}>
               {downloading === 'csv' ? 'Скачивание...' : 'Скачать CSV'}
             </Button>
-            <Button variant="outline" onClick={() => toast.info('PDF пока не реализован')} disabled={!!downloading}>
-              PDF
+            <Button variant="outline" onClick={() => handleExport('pdf')} disabled={!!downloading}>
+              {downloading === 'pdf' ? 'Скачивание...' : 'Скачать PDF'}
             </Button>
           </div>
         </CardContent>

@@ -9,7 +9,8 @@ set -euo pipefail
 # =============================================================================
 
 API_URL="${API_URL:-http://localhost:8080}"
-API_TOKEN="${API_TOKEN:?Set API_TOKEN env variable}"
+ADMIN_EMAIL="${ADMIN_EMAIL:?Set ADMIN_EMAIL env variable}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:?Set ADMIN_PASSWORD env variable}"
 PASS=0
 FAIL=0
 
@@ -26,11 +27,20 @@ check() {
 }
 
 api() {
-  curl -sf -H "Authorization: Bearer $API_TOKEN" -H "Content-Type: application/json" "$@"
+  curl -sf -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" "$@"
 }
 
 echo "=== E2E Integration Test ==="
 echo ""
+
+LOGIN=$(curl -sf -X POST "$API_URL/api/v1/auth/login" \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}")
+ACCESS_TOKEN=$(echo "$LOGIN" | jq -r '.data.accessToken')
+if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ]; then
+  echo "[FATAL] Failed to get JWT access token via /auth/login"
+  exit 1
+fi
 
 # --- 1. Health ---
 echo "1. Health check"
@@ -54,7 +64,7 @@ declare -A MQTT_USER MQTT_PASS
 # Best effort cleanup for idempotent reruns.
 for S in "${SERIALS[@]}"; do
   curl -s -o /dev/null -w "%{http_code}" \
-    -H "Authorization: Bearer $API_TOKEN" \
+    -H "Authorization: Bearer $ACCESS_TOKEN" \
     -X DELETE "$API_URL/api/v1/devices/$S" >/dev/null 2>&1 || true
 done
 
@@ -148,7 +158,7 @@ fi
 echo ""
 echo "10. Error cases"
 NOT_FOUND=$(curl -s -o /dev/null -w "%{http_code}" \
-  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   "$API_URL/api/v1/devices/SENS-XX-99999" 2>/dev/null || echo "000")
 check "Unknown device returns 404" test "$NOT_FOUND" = "404"
 
@@ -168,7 +178,7 @@ fi
 # --- 11. Decommission ---
 echo ""
 echo "11. Decommission"
-DECOM=$(curl -s -H "Authorization: Bearer $API_TOKEN" -X DELETE "$API_URL/api/v1/devices/${SERIALS[2]}")
+DECOM=$(curl -s -H "Authorization: Bearer $ACCESS_TOKEN" -X DELETE "$API_URL/api/v1/devices/${SERIALS[2]}")
 check "DELETE /devices/${SERIALS[2]} returns ok" test "$(echo "$DECOM" | jq -r '.ok')" = "true"
 
 # Verify removed from list

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const CreateAlertRuleSchema = z.object({
-  metric: z.enum(['temperature_c', 'humidity_pct']),
+  metric: z.enum(['temperature_c', 'humidity_pct', 'battery_pct']),
   operator: z.enum(['gt', 'lt', 'gte', 'lte']),
   threshold: z.number(),
   cooldownMinutes: z.number().int().min(1).default(15),

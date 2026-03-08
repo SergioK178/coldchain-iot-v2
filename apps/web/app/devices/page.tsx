@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { Search } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -17,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { apiGet } from '@/lib/api';
+import { useI18n } from '@/components/I18nProvider';
 
 type DeviceRow = {
   serial: string;
@@ -28,11 +30,17 @@ type DeviceRow = {
 };
 
 export default function DevicesPage() {
+  const { t } = useI18n();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const statusParam = searchParams.get('status');
   const [devices, setDevices] = useState<DeviceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'online' | 'offline'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'online' | 'offline'>(
+    statusParam === 'online' ? 'online' : statusParam === 'offline' ? 'offline' : 'all'
+  );
   const [filterAlert, setFilterAlert] = useState<'all' | 'yes' | 'no'>('all');
   const [filterLocation, setFilterLocation] = useState<string>('');
 
@@ -44,12 +52,12 @@ export default function DevicesPage() {
         const res = await apiGet<DeviceRow[]>('/api/v1/devices');
         setDevices(res.data ?? []);
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Не удалось загрузить устройства');
+        setError(e instanceof Error ? e.message : t('devices_error_load'));
       } finally {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [t]);
 
   const locations = useMemo(() => {
     const set = new Set<string>();
@@ -79,7 +87,7 @@ export default function DevicesPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-semibold">Устройства</h1>
+      <h1 className="text-2xl sm:text-3xl font-semibold">{t('devices_title')}</h1>
 
       {error && (
         <Card className="border-destructive">
@@ -89,69 +97,69 @@ export default function DevicesPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Список устройств</CardTitle>
+          <CardTitle>{t('devices_list')}</CardTitle>
           <div className="flex flex-col gap-3 pt-2">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Поиск по serial или названию..."
+                placeholder={t('devices_search_placeholder')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9"
               />
             </div>
             <div className="flex flex-wrap gap-2 items-center">
-              <span className="text-sm text-muted-foreground">Статус:</span>
+              <span className="text-sm text-muted-foreground">{t('devices_status')}</span>
               <Button
                 variant={filterStatus === 'all' ? 'secondary' : 'ghost'}
                 size="sm"
                 onClick={() => setFilterStatus('all')}
               >
-                Все
+                {t('devices_all')}
               </Button>
               <Button
                 variant={filterStatus === 'online' ? 'secondary' : 'ghost'}
                 size="sm"
                 onClick={() => setFilterStatus('online')}
               >
-                Онлайн
+                {t('devices_online')}
               </Button>
               <Button
                 variant={filterStatus === 'offline' ? 'secondary' : 'ghost'}
                 size="sm"
                 onClick={() => setFilterStatus('offline')}
               >
-                Офлайн
+                {t('devices_offline')}
               </Button>
-              <span className="text-sm text-muted-foreground ml-2">Тревога:</span>
+              <span className="text-sm text-muted-foreground ml-2">{t('devices_alert')}</span>
               <Button
                 variant={filterAlert === 'all' ? 'secondary' : 'ghost'}
                 size="sm"
                 onClick={() => setFilterAlert('all')}
               >
-                Все
+                {t('devices_all')}
               </Button>
               <Button
                 variant={filterAlert === 'yes' ? 'secondary' : 'ghost'}
                 size="sm"
                 onClick={() => setFilterAlert('yes')}
               >
-                Да
+                {t('devices_yes')}
               </Button>
               <Button
                 variant={filterAlert === 'no' ? 'secondary' : 'ghost'}
                 size="sm"
                 onClick={() => setFilterAlert('no')}
               >
-                Нет
+                {t('devices_no')}
               </Button>
-              <span className="text-sm text-muted-foreground ml-2">Локация:</span>
+              <span className="text-sm text-muted-foreground ml-2">{t('devices_location')}</span>
               <select
                 value={filterLocation}
                 onChange={(e) => setFilterLocation(e.target.value)}
                 className="h-9 rounded-md border border-input bg-background px-3 text-sm"
               >
-                <option value="">Все</option>
+                <option value="">{t('devices_all')}</option>
                 {locations.map((loc) => (
                   <option key={loc} value={loc}>{loc}</option>
                 ))}
@@ -163,32 +171,36 @@ export default function DevicesPage() {
           {loading ? (
             <Skeleton className="h-64 w-full" />
           ) : devices.length === 0 ? (
-            <p className="text-muted-foreground py-8 text-center">Нет устройств. Добавьте устройство на странице «Добавить устройство».</p>
+            <p className="text-muted-foreground py-8 text-center">{t('devices_no_devices')}</p>
           ) : (
-            <div className="max-h-[60vh] overflow-auto">
-              <Table>
+            <div className="max-h-[60vh] overflow-auto overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+              <Table className="min-w-[600px] sm:min-w-0">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Serial</TableHead>
-                    <TableHead>Название</TableHead>
-                    <TableHead>Зона</TableHead>
-                    <TableHead>Локация</TableHead>
-                    <TableHead>Статус</TableHead>
-                    <TableHead>Тревога</TableHead>
+                    <TableHead>{t('devices_serial')}</TableHead>
+                    <TableHead>{t('devices_name')}</TableHead>
+                    <TableHead>{t('devices_zone')}</TableHead>
+                    <TableHead>{t('devices_location_col')}</TableHead>
+                    <TableHead>{t('devices_status_col')}</TableHead>
+                    <TableHead>{t('devices_alert_col')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filtered.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                        Нет устройств по выбранным фильтрам
+                        {t('devices_no_filtered')}
                       </TableCell>
                     </TableRow>
                   ) : (
                     filtered.map((d) => (
-                      <TableRow key={d.serial}>
+                      <TableRow
+                        key={d.serial}
+                        className="cursor-pointer hover:bg-muted/50"
+                        onClick={() => router.push(`/devices/${d.serial}`)}
+                      >
                         <TableCell className="font-medium">
-                          <Link href={`/devices/${d.serial}`} className="text-primary hover:underline">
+                          <Link href={`/devices/${d.serial}`} className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
                             {d.serial}
                           </Link>
                         </TableCell>
@@ -197,11 +209,15 @@ export default function DevicesPage() {
                         <TableCell className="text-muted-foreground">{d.locationName ?? '—'}</TableCell>
                         <TableCell>
                           <Badge variant={d.connectivityStatus === 'online' ? 'success' : 'secondary'}>
-                            {d.connectivityStatus === 'online' ? 'Онлайн' : 'Офлайн'}
+                            {d.connectivityStatus === 'online' ? t('devices_online') : t('devices_offline')}
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          {d.alertStatus === 'alert' && <Badge variant="destructive">Тревога</Badge>}
+                          {d.alertStatus === 'alert' ? (
+                            <Badge variant="destructive">{t('devices_alert_badge')}</Badge>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">—</span>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))

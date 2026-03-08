@@ -15,27 +15,14 @@
   "security": [
     {
       "jwtBearer": []
-    },
-    {
-      "apiTokenBearer": []
     }
   ],
   "components": {
     "securitySchemes": {
-      "bearerAuth": {
-        "type": "http",
-        "scheme": "bearer",
-        "description": "Static API token from .env (API_TOKEN)"
-      },
       "jwtBearer": {
         "type": "http",
         "scheme": "bearer",
         "description": "JWT access token (P2 user auth)"
-      },
-      "apiTokenBearer": {
-        "type": "http",
-        "scheme": "bearer",
-        "description": "Legacy API_TOKEN fallback (deprecated)"
       },
       "cookieAuth": {
         "type": "apiKey",
@@ -929,6 +916,41 @@
           },
           "500": {
             "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "operationId": "getReady",
+        "summary": "Readiness (DB connectivity)",
+        "description": "Returns 200 if DB is reachable; 503 if unavailable. Use for load balancer / k8s probes.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": { "ok": { "type": "boolean", "example": true } }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "type": "boolean", "example": false },
+                    "error": { "type": "string", "example": "Database unavailable" }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -2176,10 +2198,58 @@
           }
         }
       }
+    },
+    "/devices/{serial}/rotate-mqtt": {
+      "post": {
+        "operationId": "rotateDeviceMqtt",
+        "summary": "Rotate device MQTT credentials",
+        "description": "Admin-only operation. Returns new MQTT credentials; plaintext password is returned once.",
+        "parameters": [
+          {
+            "name": "serial",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rotated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
     }
   },
   "x-doc-sources": [
-    "docs/openapi-p1.json",
+    "docs/archive/openapi-p1.json",
     "docs/P2/openapi-p2.json"
   ]
 }

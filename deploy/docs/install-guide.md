@@ -7,7 +7,10 @@
 - 10 ГБ свободного места на диске
 - Локальная сеть (LAN) между сервером и датчиками
 
-## Установка
+## Установка (on-prem / single-tenant)
+
+P2 использует **один canonical compose-файл**: `deploy/docker-compose.yml`.
+Отдельный local-override файл не требуется.
 
 ### 1. Скачать пакет
 
@@ -23,22 +26,35 @@ cp .env.example .env
 Откройте `.env` и заполните обязательные поля:
 
 ```
-DB_PASSWORD=<пароль PostgreSQL, придумайте надёжный>
-MQTT_ADMIN_PASSWORD=<пароль MQTT admin, придумайте надёжный>
-API_TOKEN=<токен для API, минимум 32 символа>
+DB_PASSWORD=<пароль PostgreSQL, минимум 32 символа>
+MQTT_ADMIN_PASSWORD=<пароль MQTT admin, минимум 32 символа>
+JWT_SECRET=<случайная строка, минимум 64 символа>
+ADMIN_EMAIL=admin@yourcompany.com
+ADMIN_PASSWORD=<надёжный пароль администратора>
+MOSQUITTO_RELOAD_URL=http://mqtt:9080/reload
 ```
 
-Опциональные параметры (значения по умолчанию указаны в `.env.example`):
-- `HTTP_PORT` — порт веб-интерфейса (по умолчанию 8080)
-- `MQTT_PORT` — порт MQTT брокера (по умолчанию 1883)
-- `DEVICE_OFFLINE_TIMEOUT_SEC` — таймаут офлайн-статуса (по умолчанию 300 сек)
-- `ALERT_CALLBACK_URL` — URL для HTTP-уведомлений при тревоге
+`MOSQUITTO_RELOAD_URL` — обязателен для P2 (auth-sync sidecar). В docker-compose по умолчанию `http://mqtt:9080/reload`.
+
+Опциональные параметры (значения по умолчанию в `.env.example`):
+
+| Переменная | По умолчанию | Описание |
+|---|---|---|
+| `HTTP_PORT` | 8080 | Порт API/backend |
+| `WEB_PORT` | 3000 | Порт веб-интерфейса |
+| `MQTT_PORT` | 1883 | Порт MQTT брокера |
+| `PUBLIC_API_URL` | http://localhost:8080 | Публичный URL API (виден браузеру клиента) |
+| `DEVICE_OFFLINE_TIMEOUT_SEC` | 300 | Таймаут офлайн-статуса |
+| `WEBHOOK_ALLOWLIST_HOSTS` | — | Comma-separated список разрешённых хостов для webhooks |
+| `TELEGRAM_BOT_TOKEN` | — | Токен бота для Telegram-уведомлений о тревогах (опционально) |
 
 ### 3. Запустить
 
 ```bash
 docker compose up -d
 ```
+
+**Совет:** для ускорения сборки включите BuildKit (`export DOCKER_BUILDKIT=1`). Сборка будет кэшировать зависимости и пересобирать только изменённые сервисы.
 
 Дождитесь, пока все контейнеры перейдут в статус healthy:
 
@@ -57,12 +73,43 @@ curl http://localhost:8080/api/v1/health
 {"ok": true, "data": {"version": "0.1.0", "uptime": ...}}
 ```
 
-## Регистрация первого датчика
+Для проверки готовности (DB доступна) — `/api/v1/ready`:
+```bash
+curl http://localhost:8080/api/v1/ready
+# 200: {"ok": true}  |  503: {"ok": false, "error": "Database unavailable"}
+```
+
+## Аутентификация
+
+### Войти через UI
+
+Откройте `http://<адрес_сервера>:<WEB_PORT>` в браузере и войдите с `ADMIN_EMAIL` / `ADMIN_PASSWORD`. Интерфейс поддерживает русский и английский (переключатель в сайдбаре).
+
+### Войти через API (JWT)
 
 ```bash
+curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@yourcompany.com","password":"<ADMIN_PASSWORD>"}' \
+  | jq .data.accessToken
+```
+
+Используйте полученный `accessToken` в последующих запросах:
+
+```bash
+curl http://localhost:8080/api/v1/devices \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+## Регистрация (provisioning) первого датчика
+
+```bash
+# Получите accessToken (см. выше)
+TOKEN=<accessToken>
+
 curl -X POST http://localhost:8080/api/v1/devices/provision \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <ваш API_TOKEN>" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "serial": "SENS-TH-00001",
     "displayName": "Морозилка №1",
@@ -89,11 +136,30 @@ curl -X POST http://localhost:8080/api/v1/devices/provision \
 
 **Сохраните `username` и `password`** — plaintext пароль возвращается только один раз.
 
+### Регистрация через UI с QR
+
+Откройте `/onboard` и на шаге 1:
+- введите серийный номер вручную, или
+- нажмите «Открыть сканер» и отсканируйте QR с датчика.
+
+**Формат QR для наклейки на датчик** (см. [hardware-provisioning.md](./hardware-provisioning.md#qr-code-payload-format-для-наклейки-на-датчик)):
+- Plain: `SENS-TH-00001`
+- JSON: `{"serial":"SENS-TH-00001","displayName":"Морозилка №1"}`
+- Compact: `{"s":"SENS-TH-00001","n":"Морозилка №1"}`
+
+В Chrome/Edge используется нативный BarcodeDetector; в Firefox — fallback (html5-qrcode).
+
 ### Batch-регистрация
 
-Для массовой регистрации используйте `provision-cli`:
+Для массовой регистрации используйте `provision-cli`. Сначала получите JWT access token через `POST /auth/login` (см. раздел «Войти через API»), затем передайте его в `--api-token`:
 
 ```bash
+# Получите accessToken (POST /auth/login)
+TOKEN=$(curl -s -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@yourcompany.com","password":"<ADMIN_PASSWORD>"}' \
+  | jq -r '.data.accessToken')
+
 # Подготовьте CSV файл:
 # serial,displayName,powerSource,zoneId
 # SENS-TH-00001,Морозилка №1,battery,
@@ -103,13 +169,13 @@ curl -X POST http://localhost:8080/api/v1/devices/provision \
 pnpm --filter @sensor/provision-cli provision -- \
   --file devices.csv \
   --api-url http://localhost:8080 \
-  --api-token <ваш API_TOKEN> \
+  --api-token "$TOKEN" \
   --output-file credentials.csv
 ```
 
 ## Прошивка credentials в датчик
 
-Полученные `username` и `password` необходимо прошить в датчик. Подробности — в документации по firmware.
+Полученные `username` и `password` необходимо прошить в датчик. Подробности — в [руководстве по hardware provisioning](./hardware-provisioning.md).
 
 Параметры подключения:
 - MQTT Host: IP-адрес сервера
@@ -117,26 +183,40 @@ pnpm --filter @sensor/provision-cli provision -- \
 - Username: из ответа provision
 - Password: из ответа provision
 
-## Файлы passwd и acl
+## HTTPS (опционально)
 
-Файлы `data/mosquitto/passwd` и `data/mosquitto/acl` поставляются пустыми. При первом запуске сервер автоматически выполняет **reconcile** — пересобирает оба файла из базы данных зарегистрированных устройств и перезагружает Mosquitto. Ручное редактирование этих файлов не требуется.
+Для production с TLS используйте профиль Caddy:
+
+```bash
+docker compose --profile https up -d
+```
+
+Отредактируйте `config/caddy/Caddyfile` под ваш домен. Certbot/ACME настраивается автоматически при наличии публичного домена.
 
 ## Веб-интерфейс
 
 Откройте в браузере:
 
 ```
-http://<адрес_сервера>:8080
+http://<адрес_сервера>:<WEB_PORT>
 ```
 
-При первом входе введите `API_TOKEN` из `.env`. Токен сохраняется в `sessionStorage` браузера на время сессии.
+Если `WEB_PORT` отличается от `HTTP_PORT` (например, reverse proxy), задайте `PUBLIC_API_URL` в `.env`:
+
+```
+PUBLIC_API_URL=https://api.yourcompany.com
+```
 
 ## Настройка правила тревоги
+
+Через UI: откройте карточку устройства (`/devices/SENS-TH-00001`) → раздел «Правила оповещений» → заполните метрику (температура, влажность или батарея), условие, порог, cooldown → «Добавить правило». Для уведомлений о низком заряде выберите метрику «Батарея %» и условие «&lt;» с порогом 20.
+
+Через API:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/devices/SENS-TH-00001/alert-rules \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <ваш API_TOKEN>" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "metric": "temperature_c",
     "operator": "gt",
@@ -145,26 +225,61 @@ curl -X POST http://localhost:8080/api/v1/devices/SENS-TH-00001/alert-rules \
   }'
 ```
 
-## Настройка callback URL
-
-Для получения HTTP-уведомлений при тревоге добавьте в `.env`:
-
-```
-ALERT_CALLBACK_URL=http://192.168.1.100:9000/hooks/sensor
-```
-
-Перезапустите сервер:
+## Настройка Webhook
 
 ```bash
-docker compose restart server
+curl -X POST http://localhost:8080/api/v1/webhooks \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "url": "https://your-receiver.example.com/hooks/sensor",
+    "secret": "<hmac-secret>",
+    "events": ["alert.triggered", "device.offline"]
+  }'
 ```
 
-При срабатывании правила сервер отправит POST-запрос на указанный URL с информацией о тревоге.
+Webhook подписываются HMAC-SHA256. Подробности верификации — в [security.md](./security.md).
+
+## Telegram-уведомления о тревогах
+
+При срабатывании правил тревоги система может отправлять сообщения в Telegram всем пользователям, привязавшим свой аккаунт.
+
+### 1. Создать бота
+
+1. Откройте [@BotFather](https://t.me/BotFather) в Telegram.
+2. Отправьте `/newbot`, укажите имя и username бота.
+3. Скопируйте выданный токен (например, `1234567890:ABCdefGHIjklMNOpqrsTUVwxyz`).
+
+### 2. Настроить сервер
+
+Добавьте в `.env`:
+
+```
+TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
+```
+
+Перезапустите контейнер server:
+
+```bash
+docker compose up -d server
+```
+
+Если `TELEGRAM_BOT_TOKEN` не задан, бот не запускается — ошибок не будет.
+
+### 3. Привязать Telegram пользователю
+
+1. Войдите в веб-интерфейс: `http://<адрес>:<WEB_PORT>`.
+2. Откройте **Настройки → Telegram** (`/settings/telegram`).
+3. Нажмите «Сгенерировать код».
+4. Найдите бота по username (из BotFather) и отправьте ему код.
+5. Бот подтвердит привязку — уведомления о тревогах будут приходить в этот чат.
+
+При срабатывании правила тревоги (например, температура выше порога) все пользователи с привязанным Telegram получат сообщение с данными устройства, метрикой и порогом.
 
 ## Swagger UI
 
 Документация API доступна по адресу:
 
 ```
-http://<адрес_сервера>:8080/api/docs
+http://<адрес_сервера>:<HTTP_PORT>/api/docs
 ```

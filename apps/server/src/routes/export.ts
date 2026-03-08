@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { eq, and, gte, lte, desc, inArray, isNull } from 'drizzle-orm';
-import { devices, readings, zones } from '@sensor/db';
+import { devices, readings, zones, locations } from '@sensor/db';
+import PDFDocument from 'pdfkit';
 
 const MAX_DAYS = 31;
 const MAX_ROWS = 5000;
@@ -18,9 +19,10 @@ function parseSinceUntil(since?: string, until?: string): { since: Date; until: 
 
 export async function exportRoutes(app: FastifyInstance) {
   app.get('/api/v1/export/readings', async (request, reply) => {
-    const { deviceSerial, locationId, since, until, format } = request.query as {
+    const { deviceSerial, locationId, zoneId, since, until, format } = request.query as {
       deviceSerial?: string;
       locationId?: string;
+      zoneId?: string;
       since?: string;
       until?: string;
       format?: string;
@@ -54,6 +56,12 @@ export async function exportRoutes(app: FastifyInstance) {
         });
       }
       deviceIds = [d.id];
+    } else if (zoneId) {
+      const devRows = await app.db
+        .select({ id: devices.id })
+        .from(devices)
+        .where(and(eq(devices.zoneId, zoneId), isNull(devices.decommissionedAt)));
+      deviceIds = devRows.map((d) => d.id).filter(Boolean);
     } else if (locationId) {
       const zoneRows = await app.db
         .select({ id: zones.id })
@@ -71,7 +79,7 @@ export async function exportRoutes(app: FastifyInstance) {
     } else {
       return reply.code(400).send({
         ok: false,
-        error: { code: 'VALIDATION_ERROR', message: 'deviceSerial or locationId required' },
+        error: { code: 'VALIDATION_ERROR', message: 'deviceSerial, zoneId or locationId required' },
       });
     }
 
@@ -82,7 +90,7 @@ export async function exportRoutes(app: FastifyInstance) {
         entityType: 'export',
         entityId: null,
         actor: request.actor ?? 'unknown',
-        details: { format, deviceSerial, locationId, since, until, rowCount: 0 },
+        details: { format, deviceSerial, locationId, zoneId, since, until, rowCount: 0 },
       });
       if (format === 'csv') {
         return reply
@@ -106,18 +114,29 @@ export async function exportRoutes(app: FastifyInstance) {
       .orderBy(desc(readings.timestamp))
       .limit(MAX_ROWS);
 
-    const deviceIdToSerial = new Map<string, string>();
-    for (const id of deviceIds) {
-      const [d] = await app.db.select({ serial: devices.serial }).from(devices).where(eq(devices.id, id));
-      if (d) deviceIdToSerial.set(id, d.serial);
-    }
+    const deviceRows = await app.db
+      .select({
+        id: devices.id,
+        serial: devices.serial,
+        displayName: devices.displayName,
+        zoneName: zones.name,
+        locationName: locations.name,
+      })
+      .from(devices)
+      .leftJoin(zones, eq(devices.zoneId, zones.id))
+      .leftJoin(locations, eq(zones.locationId, locations.id))
+      .where(inArray(devices.id, deviceIds));
+    const deviceIdToSerial = new Map(deviceRows.map((d) => [d.id, d.serial]));
+    const deviceLabels = deviceRows.map((d) => d.displayName || d.serial).filter(Boolean);
+    const zoneLabels = [...new Set(deviceRows.map((d) => d.zoneName).filter(Boolean))] as string[];
+    const locationLabels = [...new Set(deviceRows.map((d) => d.locationName).filter(Boolean))] as string[];
 
     await app.audit.append({
       action: 'export.readings',
       entityType: 'export',
       entityId: null,
       actor: request.actor ?? 'unknown',
-      details: { format, deviceSerial, locationId, since, until, rowCount: rows.length },
+      details: { format, deviceSerial, locationId, zoneId, since, until, rowCount: rows.length },
     });
 
     if (format === 'csv') {
@@ -137,6 +156,66 @@ export async function exportRoutes(app: FastifyInstance) {
         .send(csv);
     }
 
-    return reply.code(400).send({ ok: false, error: { code: 'VALIDATION_ERROR', message: 'PDF not implemented, use format=csv' } });
+    // PDF
+    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+    const chunks: Buffer[] = [];
+    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+    const pdfPromise = new Promise<Buffer>((resolve, reject) => {
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+    });
+
+    const generatedAt = new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' });
+    const actor = request.actor ?? '—';
+
+    doc.fontSize(16).text('ColdChain IoT — Экспорт показаний', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(10);
+    doc.text(`Период: ${range.since.toISOString().slice(0, 10)} — ${range.until.toISOString().slice(0, 10)}`, { align: 'center' });
+    doc.text(`Время генерации: ${generatedAt}`, { align: 'center' });
+    if (locationLabels.length > 0) doc.text(`Локация: ${locationLabels.join(', ')}`, { align: 'center' });
+    if (zoneLabels.length > 0) doc.text(`Зона: ${zoneLabels.join(', ')}`, { align: 'center' });
+    if (deviceLabels.length > 0) doc.text(`Устройства: ${deviceLabels.join(', ')}`, { align: 'center' });
+    doc.text(`Сгенерировал: ${actor}`, { align: 'center' });
+    doc.moveDown(1);
+
+    const colWidths = [120, 100, 70, 70, 60];
+    const headers = ['Дата/время', 'Serial', 'Температура °C', 'Влажность %', 'Батарея %'];
+    let y = doc.y;
+    doc.fontSize(9).font('Helvetica-Bold');
+    headers.forEach((h, i) => {
+      doc.text(h, 40 + colWidths.slice(0, i).reduce((a, b) => a + b, 0), y, { width: colWidths[i] });
+    });
+    y += 20;
+    doc.font('Helvetica');
+
+    for (const r of rows) {
+      const serial = deviceIdToSerial.get(r.deviceId) ?? '';
+      const ts = r.timestamp.toISOString().slice(0, 19).replace('T', ' ');
+      const t = r.temperatureC != null ? String(r.temperatureC) : '—';
+      const h = r.humidityPct != null ? String(r.humidityPct) : '—';
+      const b = r.batteryPct != null ? String(r.batteryPct) : '—';
+      const rowY = doc.y;
+      if (rowY > 750) {
+        doc.addPage();
+        y = 40;
+      }
+      doc.text(ts, 40, y, { width: colWidths[0] });
+      doc.text(serial, 40 + colWidths[0], y, { width: colWidths[1] });
+      doc.text(t, 40 + colWidths[0] + colWidths[1], y, { width: colWidths[2] });
+      doc.text(h, 40 + colWidths[0] + colWidths[1] + colWidths[2], y, { width: colWidths[3] });
+      doc.text(b, 40 + colWidths[0] + colWidths[1] + colWidths[2] + colWidths[3], y, { width: colWidths[4] });
+      y += 18;
+    }
+
+    doc.moveDown(2);
+    doc.fontSize(8).fillColor('#666').text('Сгенерировано в АИС Колдчейн', { align: 'center' });
+
+    doc.end();
+    const pdfBuffer = await pdfPromise;
+    return reply
+      .header('Content-Type', 'application/pdf')
+      .header('Content-Disposition', 'attachment; filename="readings.pdf"')
+      .send(pdfBuffer);
   });
 }

@@ -27,7 +27,7 @@ export function createAlertService(deps: AlertDeps) {
      */
     async checkAlertRules(
       deviceId: string,
-      reading: { temperatureC: number | null; humidityPct: number | null; timestamp: Date },
+      reading: { temperatureC: number | null; humidityPct: number | null; batteryPct: number | null; timestamp: Date },
     ) {
       const rules = await db
         .select()
@@ -39,6 +39,7 @@ export function createAlertService(deps: AlertDeps) {
         let value: number | null = null;
         if (rule.metric === 'temperature_c') value = reading.temperatureC;
         else if (rule.metric === 'humidity_pct') value = reading.humidityPct;
+        else if (rule.metric === 'battery_pct') value = reading.batteryPct;
 
         if (value === null) continue;
 

@@ -5,7 +5,8 @@ import { type AuditService } from './audit.js';
 
 export function createDeviceService(db: Db, audit: AuditService) {
   return {
-    async list() {
+    async list(opts?: { limit?: number }) {
+      const limit = Math.min(Math.max(opts?.limit ?? 500, 1), 1000);
       const rows = await db
         .select({
           serial: devices.serial,
@@ -25,7 +26,8 @@ export function createDeviceService(db: Db, audit: AuditService) {
         .from(devices)
         .leftJoin(zones, eq(devices.zoneId, zones.id))
         .leftJoin(locations, eq(zones.locationId, locations.id))
-        .where(isNull(devices.decommissionedAt));
+        .where(isNull(devices.decommissionedAt))
+        .limit(limit);
 
       // Check unacknowledged alerts per device
       const deviceIds = rows.map((r) => r.deviceId);
@@ -46,7 +48,12 @@ export function createDeviceService(db: Db, audit: AuditService) {
       const alertMap = new Map(unackAlerts.map((a) => [a.deviceId, a.count]));
 
       return rows.map((r) => {
-        const { type } = parseSerial(r.serial);
+        let type = 'TH';
+        try {
+          type = parseSerial(r.serial).type;
+        } catch {
+          // Fallback for legacy/invalid serial format
+        }
         const hasUnackAlert = (alertMap.get(r.deviceId) ?? 0) > 0;
         return {
         serial: r.serial,
@@ -68,8 +75,57 @@ export function createDeviceService(db: Db, audit: AuditService) {
     },
 
     async getBySerial(serial: string) {
-      const list = await this.list();
-      return list.find((d) => d.serial === serial) ?? null;
+      const [row] = await db
+        .select({
+          serial: devices.serial,
+          displayName: devices.displayName,
+          zoneName: zones.name,
+          locationName: locations.name,
+          powerSource: devices.powerSource,
+          calibrationOffsetC: devices.calibrationOffsetC,
+          lastSeenAt: devices.lastSeenAt,
+          lastTemperatureC: devices.lastTemperatureC,
+          lastHumidityPct: devices.lastHumidityPct,
+          lastBatteryPct: devices.lastBatteryPct,
+          isOnline: devices.isOnline,
+          provisionedAt: devices.provisionedAt,
+          deviceId: devices.id,
+        })
+        .from(devices)
+        .leftJoin(zones, eq(devices.zoneId, zones.id))
+        .leftJoin(locations, eq(zones.locationId, locations.id))
+        .where(and(eq(devices.serial, serial), isNull(devices.decommissionedAt)));
+
+      if (!row) return null;
+
+      const unackCount = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(alertEvents)
+        .where(and(isNull(alertEvents.acknowledgedAt), eq(alertEvents.deviceId, row.deviceId)));
+
+      let type: string = 'TH';
+      try {
+        type = parseSerial(row.serial).type;
+      } catch {
+        // Fallback for legacy/invalid serial format
+      }
+
+      return {
+        serial: row.serial,
+        deviceType: type,
+        displayName: row.displayName,
+        zoneName: row.zoneName,
+        locationName: row.locationName,
+        powerSource: row.powerSource,
+        calibrationOffsetC: row.calibrationOffsetC ?? 0,
+        lastSeenAt: row.lastSeenAt?.toISOString() ?? null,
+        lastTemperatureC: row.lastTemperatureC,
+        lastHumidityPct: row.lastHumidityPct,
+        lastBatteryPct: row.lastBatteryPct,
+        connectivityStatus: row.isOnline ? ('online' as const) : ('offline' as const),
+        alertStatus: (unackCount[0]?.count ?? 0) > 0 ? ('alert' as const) : ('normal' as const),
+        provisionedAt: row.provisionedAt!.toISOString(),
+      };
     },
 
     async patch(serial: string, input: PatchDevice, actor: string) {
@@ -80,6 +136,16 @@ export function createDeviceService(db: Db, audit: AuditService) {
 
       if (!device || device.decommissionedAt) {
         return { error: ErrorCode.DEVICE_NOT_FOUND } as const;
+      }
+
+      if (input.zoneId !== undefined && input.zoneId !== null) {
+        const [zone] = await db
+          .select({ id: zones.id })
+          .from(zones)
+          .where(eq(zones.id, input.zoneId));
+        if (!zone) {
+          return { error: ErrorCode.ZONE_NOT_FOUND } as const;
+        }
       }
 
       const updates: Record<string, unknown> = {};

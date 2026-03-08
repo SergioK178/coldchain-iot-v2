@@ -1,16 +1,15 @@
 # P2 API Reference
 
 Этот документ описывает P2-контракт поверх P1.
-P1 baseline: `docs/openapi-p1.json`.
+P1 baseline (archive): `docs/archive/openapi-p1.json`.
 P2 OpenAPI: `docs/P2/openapi-p2.json`.
-Combined актуальный OpenAPI: `docs/openapi.json` (синхронизирован с `openapi-relevant.json`).
+Combined актуальный OpenAPI: `docs/openapi.json`.
 
 ## Auth model (P2)
 
 - UI path: login/refresh/logout через `POST /api/v1/auth/*`
 - Access token: Bearer JWT (short TTL)
 - Refresh token: HTTP-only cookie (`refreshToken`)
-- Legacy: `API_TOKEN` остаётся как deprecated machine-to-machine fallback (role=admin)
 - Auth endpoints (`/auth/login`, `/auth/refresh`) защищены rate-limit; при превышении возвращается `429` и `Retry-After`.
 - Cookie policy controlled by `AUTH_COOKIE_SECURE` (`true|false|auto`, default `auto`).
 
@@ -62,10 +61,16 @@ Combined актуальный OpenAPI: `docs/openapi.json` (синхронизи
 - `POST /api/v1/devices/:serial/calibrations` (admin/operator)
 - `GET /api/v1/devices/:serial/calibrations`
 
+### Device MQTT credential rotation
+
+- `POST /api/v1/devices/:serial/rotate-mqtt` (admin)
+- Возвращает новые credentials в `data.mqtt` (plaintext показывается один раз).
+
 ### Cursor pagination (SHOULD/F11)
 
 - `GET /api/v1/devices/:serial/readings?limit=<1..100>&cursor=<opaque>&since=<iso>&until=<iso>`
 - Ответ: `{ ok: true, data: [...], cursor: string | null }`
+- По текущей реализации cursor-вариант включён для readings.
 
 ### Export (SHOULD/F9)
 
@@ -77,7 +82,6 @@ Combined актуальный OpenAPI: `docs/openapi.json` (синхронизи
 ## Actor rules (P2)
 
 - JWT requests: actor = `users.email`
-- API_TOKEN requests: actor = `"api_token"` (immutable)
 - `?actor=` не влияет на audit actor
 
 ## P1 compatibility

@@ -43,12 +43,6 @@ export async function userRoutes(app: FastifyInstance) {
         error: { code: ErrorCode.UNAUTHORIZED, message: 'Not authenticated' },
       });
     }
-    if (u.type === 'api_token') {
-      return reply.send({
-        ok: true,
-        data: { email: 'api_token', role: 'admin', name: null, id: null },
-      });
-    }
     const [user] = await app.db
       .select({ id: users.id, email: users.email, name: users.name, role: users.role, telegramChatId: users.telegramChatId })
       .from(users)
@@ -64,7 +58,7 @@ export async function userRoutes(app: FastifyInstance) {
 
   app.post('/api/v1/users/me/telegram-code', async (request, reply) => {
     const u = request.user;
-    if (!u || u.type === 'api_token') {
+    if (!u) {
       return reply.code(403).send({
         ok: false,
         error: { code: ErrorCode.FORBIDDEN, message: 'Login required' },
@@ -77,7 +71,7 @@ export async function userRoutes(app: FastifyInstance) {
 
   app.patch('/api/v1/users/me/telegram', async (request, reply) => {
     const u = request.user;
-    if (!u || u.type === 'api_token') {
+    if (!u) {
       return reply.code(403).send({
         ok: false,
         error: { code: ErrorCode.FORBIDDEN, message: 'Login required' },
@@ -96,10 +90,10 @@ export async function userRoutes(app: FastifyInstance) {
 
   app.patch('/api/v1/users/me/password', async (request, reply) => {
     const u = request.user;
-    if (!u || u.type === 'api_token') {
+    if (!u) {
       return reply.code(403).send({
         ok: false,
-        error: { code: ErrorCode.FORBIDDEN, message: 'Cannot change password for API token' },
+        error: { code: ErrorCode.FORBIDDEN, message: 'Login required' },
       });
     }
     const parsed = PatchPasswordSchema.safeParse(request.body);
@@ -160,7 +154,7 @@ export async function userRoutes(app: FastifyInstance) {
       action: 'user.created',
       entityType: 'user',
       entityId: created.id,
-      actor: request.actor ?? 'api_token',
+      actor: request.actor ?? 'system',
       details: { email: created.email, role: created.role },
     });
     return reply.code(201).send({
@@ -204,7 +198,7 @@ export async function userRoutes(app: FastifyInstance) {
       action: 'user.updated',
       entityType: 'user',
       entityId: id,
-      actor: request.actor ?? 'api_token',
+      actor: request.actor ?? 'system',
       details: updates,
     });
     return reply.send({
@@ -234,7 +228,7 @@ export async function userRoutes(app: FastifyInstance) {
       action: 'user.deleted',
       entityType: 'user',
       entityId: id,
-      actor: request.actor ?? 'api_token',
+      actor: request.actor ?? 'system',
       details: { email: existing.email },
     });
     return reply.send({ ok: true, data: {} });

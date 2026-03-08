@@ -13,9 +13,8 @@ Rotate and redeploy:
 1. `DB_PASSWORD`
 2. `MQTT_ADMIN_PASSWORD`
 3. `JWT_SECRET`
-4. `API_TOKEN`
-5. `ADMIN_PASSWORD` (strong: >=16 chars, lower/upper/digit/special)
-6. `TELEGRAM_BOT_TOKEN` (if used)
+4. `ADMIN_PASSWORD` (strong: >=16 chars, lower/upper/digit/special)
+5. `TELEGRAM_BOT_TOKEN` (if used)
 
 ## 3) Auth hardening
 
@@ -35,5 +34,5 @@ Rotate and redeploy:
 
 ## 5) Audit integrity
 
-- API_TOKEN requests always use actor `api_token`.
+- Actor derives from JWT auth context only.
 - Query `?actor=` is ignored for audit actor.

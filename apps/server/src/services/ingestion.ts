@@ -17,6 +17,7 @@ export interface IngestionDeps {
   onReading?: (deviceId: string, reading: {
     temperatureC: number | null;
     humidityPct: number | null;
+    batteryPct: number | null;
     timestamp: Date;
   }) => Promise<void>;
 }
@@ -46,7 +47,7 @@ export function createIngestionService(deps: IngestionDeps) {
           action: 'payload.invalid',
           entityType: 'telemetry',
           actor: 'system',
-          details: { reason: 'schema_validation', raw: rawPayloadStr },
+          details: { reason: 'schema_validation', rawLength: Buffer.byteLength(rawPayloadStr, 'utf-8') },
         });
         return;
       }
@@ -67,7 +68,7 @@ export function createIngestionService(deps: IngestionDeps) {
           action: 'device.unknown_message',
           entityType: 'device',
           actor: 'system',
-          details: { serial: payload.id, raw: rawPayloadStr },
+          details: { serial: payload.id },
         });
         return;
       }
@@ -150,6 +151,7 @@ export function createIngestionService(deps: IngestionDeps) {
         await deps.onReading(device.id, {
           temperatureC,
           humidityPct,
+          batteryPct: payload.bat ?? null,
           timestamp: readingTimestamp,
         });
       }

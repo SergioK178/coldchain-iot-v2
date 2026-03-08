@@ -1,17 +1,18 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { Suspense, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-export default function LoginPage() {
+function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -36,7 +37,9 @@ export default function LoginPage() {
         setError(data.error?.message || 'Ошибка входа');
         return;
       }
-      router.push('/');
+      const next = searchParams.get('next');
+      const target = next && next.startsWith('/') ? next : '/';
+      router.push(target);
       router.refresh();
     } catch {
       setError('Не удалось подключиться к API. Проверьте сеть и контейнеры.');
@@ -77,5 +80,13 @@ export default function LoginPage() {
         </CardContent>
       </Card>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<main className="min-h-screen flex items-center justify-center p-4"><Card className="w-full max-w-md"><CardContent className="pt-6">Загрузка...</CardContent></Card></main>}>
+      <LoginForm />
+    </Suspense>
   );
 }

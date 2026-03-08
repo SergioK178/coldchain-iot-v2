@@ -1,7 +1,7 @@
 export const DEVICE_TYPES = {
-  TH: { label: 'Temperature + Humidity', capabilities: ['temperature_c', 'humidity_pct'] },
-  TP: { label: 'Temperature Probe',     capabilities: ['temperature_c'] },
-  T:  { label: 'Temperature Only',      capabilities: ['temperature_c'] },
+  TH: { label: 'Temperature + Humidity', capabilities: ['temperature_c', 'humidity_pct', 'battery_pct'] },
+  TP: { label: 'Temperature Probe',     capabilities: ['temperature_c', 'battery_pct'] },
+  T:  { label: 'Temperature Only',      capabilities: ['temperature_c', 'battery_pct'] },
   HM: { label: 'Humidity Only',         capabilities: ['humidity_pct'] },
 } as const;
 

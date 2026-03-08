@@ -26,11 +26,15 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/lib/api';
 import { toast } from 'sonner';
+import { useI18n } from '@/components/I18nProvider';
 
 type Location = { id: string; name: string; address?: string | null };
+type Device = { serial: string; locationName: string | null };
 
 export default function LocationsPage() {
+  const { t } = useI18n();
   const [locations, setLocations] = useState<Location[]>([]);
+  const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
@@ -45,10 +49,14 @@ export default function LocationsPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await apiGet<Location[]>('/api/v1/locations');
-      setLocations(res.data ?? []);
+      const [locRes, devRes] = await Promise.all([
+        apiGet<Location[]>('/api/v1/locations'),
+        apiGet<Device[]>('/api/v1/devices'),
+      ]);
+      setLocations(locRes.data ?? []);
+      setDevices(devRes.data ?? []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ошибка загрузки');
+      setError(e instanceof Error ? e.message : t('dashboard_error_load'));
     } finally {
       setLoading(false);
     }
@@ -64,13 +72,13 @@ export default function LocationsPage() {
     setSubmitting(true);
     try {
       await apiPost('/api/v1/locations', { name: formName.trim(), address: formAddress.trim() || undefined });
-      toast.success('Локация создана');
+      toast.success(t('locations_created'));
       setCreateOpen(false);
       setFormName('');
       setFormAddress('');
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка');
+      toast.error(e instanceof Error ? e.message : t('common_error'));
     } finally {
       setSubmitting(false);
     }
@@ -82,12 +90,12 @@ export default function LocationsPage() {
     setSubmitting(true);
     try {
       await apiPatch(`/api/v1/locations/${selected.id}`, { name: formName.trim(), address: formAddress.trim() || undefined });
-      toast.success('Локация обновлена');
+      toast.success(t('locations_updated'));
       setEditOpen(false);
       setSelected(null);
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка');
+      toast.error(e instanceof Error ? e.message : t('common_error'));
     } finally {
       setSubmitting(false);
     }
@@ -98,12 +106,12 @@ export default function LocationsPage() {
     setSubmitting(true);
     try {
       await apiDelete(`/api/v1/locations/${selected.id}`);
-      toast.success('Локация удалена');
+      toast.success(t('locations_deleted'));
       setDeleteOpen(false);
       setSelected(null);
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка');
+      toast.error(e instanceof Error ? e.message : t('common_error'));
     } finally {
       setSubmitting(false);
     }
@@ -121,10 +129,15 @@ export default function LocationsPage() {
     setDeleteOpen(true);
   };
 
+  const deviceCountByLoc = locations.reduce<Record<string, number>>((acc, loc) => {
+    acc[loc.name] = devices.filter((d) => d.locationName === loc.name).length;
+    return acc;
+  }, {});
+
   if (loading) {
     return (
       <div className="space-y-6">
-        <h1 className="text-3xl font-semibold">Локации и зоны</h1>
+        <h1 className="text-3xl font-semibold">{t('locations_title')}</h1>
         <Skeleton className="h-64 w-full" />
       </div>
     );
@@ -133,10 +146,10 @@ export default function LocationsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-semibold">Локации и зоны</h1>
+        <h1 className="text-3xl font-semibold">{t('locations_title')}</h1>
         <Button onClick={() => { setFormName(''); setFormAddress(''); setCreateOpen(true); }}>
           <Plus className="h-4 w-4 mr-2" />
-          Добавить локацию
+          {t('locations_add')}
         </Button>
       </div>
 
@@ -148,18 +161,19 @@ export default function LocationsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Список локаций</CardTitle>
+          <CardTitle>{t('locations_list')}</CardTitle>
         </CardHeader>
         <CardContent>
           {locations.length === 0 ? (
-            <p className="text-muted-foreground py-4">Нет локаций. Создайте первую.</p>
+            <p className="text-muted-foreground py-4">{t('locations_no_locations')}</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Название</TableHead>
-                  <TableHead>Адрес</TableHead>
-                  <TableHead className="w-[120px]">Действия</TableHead>
+                  <TableHead>{t('locations_name')}</TableHead>
+                  <TableHead>{t('locations_address')}</TableHead>
+                  <TableHead>{t('locations_devices_col')}</TableHead>
+                  <TableHead className="w-[120px]">{t('locations_actions')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -170,7 +184,8 @@ export default function LocationsPage() {
                         {loc.name}
                       </Link>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{loc.address ?? '—'}</TableCell>
+                    <TableCell className="text-muted-foreground">{loc.address || t('locations_not_specified')}</TableCell>
+                    <TableCell>{deviceCountByLoc[loc.name] ?? 0}</TableCell>
                     <TableCell>
                       <div className="flex gap-2">
                         <Button variant="ghost" size="icon" onClick={() => openEdit(loc)}><Pencil className="h-4 w-4" /></Button>
@@ -188,23 +203,23 @@ export default function LocationsPage() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Новая локация</DialogTitle>
-            <DialogDescription>Введите название и опционально адрес.</DialogDescription>
+            <DialogTitle>{t('locations_new')}</DialogTitle>
+            <DialogDescription>{t('locations_new_desc')}</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreate}>
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="create-name">Название</Label>
+                <Label htmlFor="create-name">{t('locations_name')}</Label>
                 <Input id="create-name" value={formName} onChange={(e) => setFormName(e.target.value)} required />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="create-address">Адрес</Label>
+                <Label htmlFor="create-address">{t('locations_address')}</Label>
                 <Input id="create-address" value={formAddress} onChange={(e) => setFormAddress(e.target.value)} />
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Отмена</Button>
-              <Button type="submit" disabled={submitting}>Создать</Button>
+              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>{t('locations_cancel')}</Button>
+              <Button type="submit" disabled={submitting}>{t('locations_create')}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -213,22 +228,22 @@ export default function LocationsPage() {
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Редактировать локацию</DialogTitle>
+            <DialogTitle>{t('locations_edit')}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleEdit}>
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="edit-name">Название</Label>
+                <Label htmlFor="edit-name">{t('locations_name')}</Label>
                 <Input id="edit-name" value={formName} onChange={(e) => setFormName(e.target.value)} required />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="edit-address">Адрес</Label>
+                <Label htmlFor="edit-address">{t('locations_address')}</Label>
                 <Input id="edit-address" value={formAddress} onChange={(e) => setFormAddress(e.target.value)} />
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>Отмена</Button>
-              <Button type="submit" disabled={submitting}>Сохранить</Button>
+              <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>{t('locations_cancel')}</Button>
+              <Button type="submit" disabled={submitting}>{t('locations_save')}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -237,14 +252,14 @@ export default function LocationsPage() {
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Удалить локацию?</DialogTitle>
+            <DialogTitle>{t('locations_delete')}</DialogTitle>
             <DialogDescription>
-              Локация «{selected?.name}» будет удалена. Зоны без устройств также удалятся. Нельзя удалить локацию, в зонах которой есть устройства.
+              {t('locations_delete_desc', { name: selected?.name ?? '' })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setDeleteOpen(false)}>Отмена</Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={submitting}>Удалить</Button>
+            <Button type="button" variant="outline" onClick={() => setDeleteOpen(false)}>{t('locations_cancel')}</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={submitting}>{t('locations_delete_btn')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

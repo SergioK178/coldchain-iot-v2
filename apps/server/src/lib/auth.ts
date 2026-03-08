@@ -64,8 +64,17 @@ export function createRefreshTokenValue(): string {
   return randomBytes(REFRESH_TOKEN_BYTES).toString('base64url');
 }
 
-export function hashRefreshToken(value: string): string {
-  return createHmac('sha256', 'refresh').update(value).digest('hex');
+/**
+ * HMAC-SHA256 hash of a refresh token value.
+ * The jwtSecret is used as the HMAC key so that a DB dump alone is not
+ * sufficient to forge or verify tokens — the attacker must also have
+ * the secret from the environment.
+ *
+ * NOTE: changing JWT_SECRET invalidates all existing refresh tokens (users
+ * must re-authenticate). This is intentional: secret rotation = session revocation.
+ */
+export function hashRefreshToken(value: string, jwtSecret: string): string {
+  return createHmac('sha256', jwtSecret).update(value).digest('hex');
 }
 
 export function getRefreshCookieMaxAge(): number {

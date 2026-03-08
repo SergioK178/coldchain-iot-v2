@@ -6,11 +6,12 @@ set -euo pipefail
 # Provisions 3 devices, runs simulators, checks readings/alerts/acknowledge,
 # tests offline detection, decommission, backup/restore.
 # Run from deploy/ directory with running docker compose stack.
-# Usage: API_TOKEN=<token> ./scripts/e2e-with-simulators.sh
+# Usage: ADMIN_EMAIL=<email> ADMIN_PASSWORD=<password> ./scripts/e2e-with-simulators.sh
 # =============================================================================
 
 API_URL="${API_URL:-http://localhost:8080}"
-API_TOKEN="${API_TOKEN:?Set API_TOKEN env variable}"
+ADMIN_EMAIL="${ADMIN_EMAIL:?Set ADMIN_EMAIL env variable}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:?Set ADMIN_PASSWORD env variable}"
 REPO_ROOT="${REPO_ROOT:-$(cd .. && pwd)}"
 MQTT_PORT="${MQTT_PORT:-1883}"
 PIDS=()
@@ -41,11 +42,20 @@ check() {
 }
 
 api() {
-  curl -sf -H "Authorization: Bearer $API_TOKEN" -H "Content-Type: application/json" "$@"
+  curl -sf -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" "$@"
 }
 
 echo "=== Full E2E Test with Simulators ==="
 echo ""
+
+LOGIN=$(curl -sf -X POST "$API_URL/api/v1/auth/login" \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}")
+ACCESS_TOKEN=$(echo "$LOGIN" | jq -r '.data.accessToken')
+if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ]; then
+  echo "[FATAL] Failed to get JWT access token via /auth/login"
+  exit 1
+fi
 
 # --- 1. Provision 3 devices ---
 echo "1. Provisioning 3 devices"
@@ -60,7 +70,7 @@ declare -A MQTT_U MQTT_P
 # Best effort cleanup for idempotent reruns.
 for S in "${SERIALS[@]}"; do
   curl -s -o /dev/null -w "%{http_code}" \
-    -H "Authorization: Bearer $API_TOKEN" \
+    -H "Authorization: Bearer $ACCESS_TOKEN" \
     -X DELETE "$API_URL/api/v1/devices/$S" >/dev/null 2>&1 || true
 done
 
@@ -157,7 +167,7 @@ if [ "$EVENT_COUNT" -gt 0 ]; then
 
   # 409 on re-acknowledge
   ACK2=$(curl -s -o /dev/null -w "%{http_code}" \
-    -H "Authorization: Bearer $API_TOKEN" \
+    -H "Authorization: Bearer $ACCESS_TOKEN" \
     -H "Content-Type: application/json" \
     -X PATCH "$API_URL/api/v1/alert-events/$EVENT_ID/acknowledge" \
     -d '{"acknowledgedBy":"E2E Test"}' 2>/dev/null || echo "000")
@@ -189,7 +199,7 @@ check "${SERIALS[2]} offline via LWT" test "$OFFLINE_OK" = "1"
 # --- 9. Decommission ---
 echo ""
 echo "9. Decommission"
-DECOM=$(curl -s -H "Authorization: Bearer $API_TOKEN" -X DELETE "$API_URL/api/v1/devices/${SERIALS[2]}")
+DECOM=$(curl -s -H "Authorization: Bearer $ACCESS_TOKEN" -X DELETE "$API_URL/api/v1/devices/${SERIALS[2]}")
 check "Decommissioned ${SERIALS[2]}" test "$(echo "$DECOM" | jq -r '.ok')" = "true"
 
 DEVICES_AFTER=$(api "$API_URL/api/v1/devices")

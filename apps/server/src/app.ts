@@ -1,7 +1,6 @@
 import Fastify from 'fastify';
 import { type Env } from './config.js';
-import { createDb, type Db, webhooks } from '@sensor/db';
-import { randomBytes } from 'node:crypto';
+import { createDb, type Db } from '@sensor/db';
 import { swaggerPlugin } from './plugins/swagger.js';
 import { authPlugin } from './plugins/auth.js';
 import { mqttPlugin } from './plugins/mqtt.js';
@@ -29,12 +28,13 @@ import { exportRoutes } from './routes/export.js';
 // Extend Fastify with custom properties
 declare module 'fastify' {
   interface FastifyRequest {
-    user?: { type: 'jwt'; sub: string; email: string; role: string } | { type: 'api_token'; role: 'admin'; email: 'api_token' };
+    user?: { type: 'jwt'; sub: string; email: string; role: string };
     actor?: string;
   }
   interface FastifyInstance {
     env: Env;
     db: Db;
+    mqttConnected: boolean;
     audit: AuditService;
     authService: AuthService;
     deviceService: DeviceService;
@@ -46,7 +46,7 @@ declare module 'fastify' {
   }
 }
 
-export async function buildApp(env: Env, adminPasswordHash: string) {
+export async function buildApp(env: Env) {
   const app = Fastify({ logger: true });
 
   // Decorate with env
@@ -74,19 +74,6 @@ export async function buildApp(env: Env, adminPasswordHash: string) {
   const webhookService = createWebhookService({ db, webhookAllowlistHosts: env.WEBHOOK_ALLOWLIST_HOSTS });
   app.decorate('webhookService', webhookService);
 
-  // P2: legacy migration — if ALERT_CALLBACK_URL set and no webhooks, create one
-  const existingWebhooks = await db.select({ id: webhooks.id }).from(webhooks).limit(1);
-  if (existingWebhooks.length === 0 && env.ALERT_CALLBACK_URL) {
-    const secret = randomBytes(32).toString('hex');
-    await db.insert(webhooks).values({
-      url: env.ALERT_CALLBACK_URL,
-      secret,
-      events: ['alert.triggered'],
-      isActive: true,
-    });
-    app.log.info('Created legacy webhook from ALERT_CALLBACK_URL');
-  }
-
   const alertService = createAlertService({
     db,
     audit,
@@ -96,7 +83,7 @@ export async function buildApp(env: Env, adminPasswordHash: string) {
   app.decorate('alertService', alertService);
 
   // Provision deps
-  const provisionDeps: ProvisionDeps = { db, audit, env, adminPasswordHash };
+  const provisionDeps: ProvisionDeps = { db, audit, env };
   app.decorate('provisionDeps', provisionDeps);
   app.decorate('provision', provision);
 
@@ -130,7 +117,7 @@ export async function buildApp(env: Env, adminPasswordHash: string) {
   await app.register(webhookRoutes);
   await app.register(exportRoutes);
 
-  const stopRetryLoop = webhookService.startRetryLoop();
+  const stopRetryLoop = webhookService.startRetryLoop(app.log);
   app.addHook('onClose', () => stopRetryLoop());
 
   if (env.TELEGRAM_BOT_TOKEN) {

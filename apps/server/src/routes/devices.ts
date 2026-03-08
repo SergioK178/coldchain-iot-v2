@@ -45,7 +45,7 @@ export async function deviceRoutes(app: FastifyInstance) {
       });
     }
 
-    const actor = request.actor ?? 'api_token';
+    const actor = request.actor ?? 'system';
 
     const result = await app.provision.provisionDevice(
       app.provisionDeps,
@@ -69,8 +69,10 @@ export async function deviceRoutes(app: FastifyInstance) {
   });
 
   // GET /api/v1/devices
-  app.get('/api/v1/devices', async () => {
-    const data = await app.deviceService.list();
+  app.get('/api/v1/devices', async (request) => {
+    const { limit: limitStr } = request.query as { limit?: string };
+    const limit = limitStr ? Math.min(Math.max(parseInt(limitStr, 10) || 500, 1), 1000) : undefined;
+    const data = await app.deviceService.list({ limit });
     return { ok: true, data };
   });
 
@@ -98,12 +100,15 @@ export async function deviceRoutes(app: FastifyInstance) {
         error: { code: ErrorCode.VALIDATION_ERROR, message: parsed.error.message },
       });
     }
-    const actor = request.actor ?? 'api_token';
+    const actor = request.actor ?? 'system';
     const result = await app.deviceService.patch(serial, parsed.data, actor);
     if ('error' in result) {
       return reply.code(404).send({
         ok: false,
-        error: { code: result.error, message: 'Device not found' },
+        error: {
+          code: result.error,
+          message: result.error === ErrorCode.ZONE_NOT_FOUND ? 'Zone not found' : 'Device not found',
+        },
       });
     }
     return { ok: true, data: result.data };
@@ -113,7 +118,7 @@ export async function deviceRoutes(app: FastifyInstance) {
   app.delete('/api/v1/devices/:serial', async (request, reply) => {
     if (!requireAdmin(request, reply)) return;
     const { serial } = request.params as { serial: string };
-    const actor = request.actor ?? 'api_token';
+    const actor = request.actor ?? 'system';
     const result = await app.provision.decommissionDevice(
       app.provisionDeps,
       serial,
@@ -126,5 +131,24 @@ export async function deviceRoutes(app: FastifyInstance) {
       });
     }
     return { ok: true, data: result.data };
+  });
+
+  // POST /api/v1/devices/:serial/rotate-mqtt
+  app.post('/api/v1/devices/:serial/rotate-mqtt', async (request, reply) => {
+    if (!requireAdmin(request, reply)) return;
+    const { serial } = request.params as { serial: string };
+    const actor = request.actor ?? 'system';
+    const result = await app.provision.rotateDeviceMqttCredentials(
+      app.provisionDeps,
+      serial,
+      actor,
+    );
+    if ('error' in result) {
+      return reply.code(404).send({
+        ok: false,
+        error: { code: result.error, message: 'Device not found' },
+      });
+    }
+    return reply.send({ ok: true, data: result.data });
   });
 }

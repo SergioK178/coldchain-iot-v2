@@ -4,11 +4,11 @@
 
 ## 1. Как читать документ
 
-- P1 source of truth: `docs/MASTER-SPEC.md`
-- P1 OpenAPI: `docs/openapi-p1.json`
+- P1 source of truth (archive): `docs/archive/MASTER-SPEC.md`
+- P1 OpenAPI (archive): `docs/archive/openapi-p1.json`
 - P2 source of truth: `docs/P2/P2-EVOLUTION.md`
 - P2 OpenAPI (current implementation draft): `docs/P2/openapi-p2.json`
-- Combined актуальный OpenAPI (P1 + P2): `openapi-relevant.json`
+- Combined актуальный OpenAPI (P1 + P2): `docs/openapi.json`
 
 ## 2. Базовые правила (общие)
 
@@ -16,26 +16,24 @@
 - Response envelope:
   - success: `{ "ok": true, "data": ... }`
   - error: `{ "ok": false, "error": { "code": "...", "message": "..." } }`
-- `GET /health` публичный.
+- `GET /health` и `GET /ready` публичные. `/ready` проверяет доступность БД (200/503).
 - Остальные endpoints требуют авторизацию по своему режиму (см. ниже).
 
 ## 3. Auth и actor (P1 vs P2)
 
 ### P1
 
-- Auth: `Authorization: Bearer {API_TOKEN}`
+- Historical (archived) auth behavior is documented only in `docs/archive/openapi-p1.json` and `docs/archive/MASTER-SPEC.md`.
 - `?actor=` — historical P1 behavior (в текущем P2 runtime override отключён для audit integrity).
 - Исключение: acknowledge использует `acknowledgedBy` из body.
 
 ### P2
 
 - UI auth: JWT access token + refresh token в HTTP-only cookie.
-- M2M fallback: `API_TOKEN` (deprecated, но поддерживается).
 - Auth endpoints `/auth/login` и `/auth/refresh` защищены rate-limit (429 + `Retry-After`).
 - Cookie policy controlled by `AUTH_COOKIE_SECURE` (`true|false|auto`, default `auto`).
 - Actor:
   - JWT-запросы: `actor = users.email`
-  - API_TOKEN-запросы: `actor = "api_token"`
   - `?actor=` не влияет на audit actor.
 
 ## 4. Endpoint-каталог
@@ -57,7 +55,7 @@
 - `PATCH /alert-events/:id/acknowledge`
 - `GET /audit-log`
 
-Подробная P1-форма запросов/ответов: `docs/openapi-p1.json`.
+Подробная P1-форма запросов/ответов: `docs/archive/openapi-p1.json`.
 
 ### 4.2 P2 new endpoints
 
@@ -104,10 +102,14 @@
 - `POST /devices/:serial/calibrations`
 - `GET /devices/:serial/calibrations`
 
+#### Device MQTT credentials (operations hardening)
+
+- `POST /devices/:serial/rotate-mqtt` (admin): rotates device MQTT password and returns plaintext credentials once.
+
 #### Export (SHOULD/F9)
 
 - `GET /export/readings?deviceSerial=<serial>|locationId=<id>&since=<iso>&until=<iso>&format=csv|pdf`
-- Статус: `csv` реализован, `pdf` остаётся backlog.
+- Статус: `csv` и `pdf` реализованы.
 
 #### Readings pagination (SHOULD/F11)
 
@@ -118,12 +120,12 @@
 
 ## 5. Матрица контрактов
 
-- `docs/openapi-p1.json`: только P1 контракт, замороженный baseline.
+- `docs/archive/openapi-p1.json`: только P1 контракт, замороженный baseline.
 - `docs/P2/openapi-p2.json`: только P2-добавления/изменения.
-- `openapi-relevant.json`: объединённый актуальный контракт для текущей кодовой базы (P1 + P2).
 
 ## 6. Совместимость
 
 - P1 endpoints сохранены в P2.
 - Envelope остаётся совместимым.
 - Для P2 может появляться additive поле `cursor` в list endpoints (где включена пагинация).
+- Actor всегда берётся из JWT auth-context, query `?actor=` не влияет на audit actor.

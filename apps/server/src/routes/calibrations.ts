@@ -62,7 +62,7 @@ export async function calibrationRoutes(app: FastifyInstance) {
       action: 'calibration.recorded',
       entityType: 'calibration_record',
       entityId: record!.id,
-      actor: request.actor ?? 'api_token',
+      actor: request.actor ?? 'system',
       details: { deviceSerial: serial, offsetC },
     });
     return reply.code(201).send({

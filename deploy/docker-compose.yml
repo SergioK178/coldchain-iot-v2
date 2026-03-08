@@ -1,3 +1,6 @@
+# DOCKER_BUILDKIT=1 для кэширования слоёв (по умолчанию в Docker 23+)
+# docker compose build — использует кэш, пересборка только изменённых сервисов
+
 services:
   db:
     pull_policy: missing
@@ -70,10 +73,8 @@ services:
       MQTT_ADMIN_USER: "${MQTT_ADMIN_USER:-server}"
       MQTT_ADMIN_PASSWORD: "${MQTT_ADMIN_PASSWORD:?error: set MQTT_ADMIN_PASSWORD in .env}"
       JWT_SECRET: "${JWT_SECRET:?error: set JWT_SECRET for P2 in .env}"
-      API_TOKEN: "${API_TOKEN:-}"
       ADMIN_EMAIL: "${ADMIN_EMAIL:-}"
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"
-      ALERT_CALLBACK_URL: "${ALERT_CALLBACK_URL:-}"
       DEVICE_OFFLINE_TIMEOUT_SEC: "${DEVICE_OFFLINE_TIMEOUT_SEC:-300}"
       AUTH_RATE_LIMIT_LOGIN_MAX: "${AUTH_RATE_LIMIT_LOGIN_MAX:-8}"
       AUTH_RATE_LIMIT_LOGIN_WINDOW_SEC: "${AUTH_RATE_LIMIT_LOGIN_WINDOW_SEC:-300}"
@@ -83,8 +84,6 @@ services:
       AUTH_COOKIE_SECURE: "${AUTH_COOKIE_SECURE:-auto}"
       WEBHOOK_ALLOWLIST_HOSTS: "${WEBHOOK_ALLOWLIST_HOSTS:-}"
       MOSQUITTO_RELOAD_URL: "http://mqtt:9080/reload"
-    volumes:
-      - ./data/mosquitto:/mosquitto-data
     ports:
       - "${HTTP_PORT:-8080}:8080"
     healthcheck:

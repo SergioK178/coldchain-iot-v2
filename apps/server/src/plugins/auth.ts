@@ -9,13 +9,12 @@ const AUTH_PATHS = new Set([
 ]);
 
 function isPublicPath(url: string): boolean {
-  if (url === '/api/v1/health') return true;
+  if (url === '/api/v1/health' || url === '/api/v1/ready') return true;
   if (url === '/api/docs' || url.startsWith('/api/docs/')) return true;
   return AUTH_PATHS.has(url);
 }
 
 export async function authPlugin(app: FastifyInstance) {
-  const apiToken = app.env.API_TOKEN;
   const jwtSecret = app.env.JWT_SECRET;
 
   app.addHook('onRequest', async (request, reply) => {
@@ -26,7 +25,7 @@ export async function authPlugin(app: FastifyInstance) {
     if (!auth || !auth.startsWith('Bearer ')) {
       return reply.code(401).send({
         ok: false,
-        error: { code: ErrorCode.UNAUTHORIZED, message: 'Invalid or missing API token' },
+        error: { code: ErrorCode.UNAUTHORIZED, message: 'Invalid or missing access token' },
       });
     }
 
@@ -42,18 +41,9 @@ export async function authPlugin(app: FastifyInstance) {
       }
     }
 
-    // API_TOKEN fallback (deprecated)
-    if (apiToken && token === apiToken) {
-      request.user = { type: 'api_token', role: 'admin', email: 'api_token' };
-      request.actor = 'api_token';
-      const actorHint = (request.query as { actor?: string }).actor;
-      if (actorHint) app.log.warn({ actorHint }, 'Ignoring ?actor override for API_TOKEN request');
-      return;
-    }
-
     return reply.code(401).send({
       ok: false,
-      error: { code: ErrorCode.UNAUTHORIZED, message: 'Invalid or missing API token' },
+      error: { code: ErrorCode.UNAUTHORIZED, message: 'Invalid or missing access token' },
     });
   });
 }

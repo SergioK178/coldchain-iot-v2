@@ -4,8 +4,8 @@
 
 ## IoT Sensor Platform — P2 Architecture / Evolution Spec
 
-**Статус:** FROZEN — source of truth для P2, кроме F6 (финальный механизм выбирается по результату spike S1 до начала основной реализации F6)
-**Привязка:** MASTER-SPEC.md v3.1 (P1), фактическая реализация P1
+**Статус:** FROZEN — source of truth для P2 (F6 зафиксирован и реализован через sidecar `mosquitto-auth-sync`)
+**Привязка:** archive/MASTER-SPEC.md v3.1 (P1), фактическая реализация P1
 **Scope:** Только P2. Всё за пределами P2 — в разделе Not In P2.
 
 ---
@@ -57,7 +57,7 @@
 | L3 | Только HTTP callback, без retry | Потерянный callback = пропущенная тревога | Webhook engine v2 (F5) |
 | L4 | Provisioning только через curl/CLI | Установщик на объекте должен знать curl | UI provisioning form (F8a), QR как optional ускоритель (F8b) |
 | L5 | Location/Zone — только seed, нет CRUD | Нельзя добавить зону без прямого SQL | CRUD API + UI (F3) |
-| L6 | docker.sock mount для Mosquitto reload | Привилегированный доступ, не работает в rootless/Podman | Mosquitto Dynamic Security Plugin (F6) |
+| L6 | docker.sock mount для Mosquitto reload | Привилегированный доступ, не работает в rootless/Podman | Internal sidecar auth-sync без docker.sock (F6) |
 | L7 | Calibration — только offset поле | Нет истории, нет доказательности для проверок | Calibration records (F10) |
 | L8 | Нет CI/CD | Ручная сборка и деплой | GitHub Actions (F7) |
 | L9 | Нет HTTPS | Проблема при удалённом доступе | Caddy (F12, опционально) |
@@ -75,7 +75,7 @@
 | F2 | UI: Next.js, device detail, графики (Recharts), навигация | L2 | L |
 | F3 | Locations/Zones CRUD (API + UI) | L5 | S |
 | F5 | Webhook engine v2 (retry, HMAC-SHA256, multiple URLs, delivery log) | L3 | M |
-| F6 | Mosquitto auth без docker.sock (механизм выбирается по spike S1) | L6 | M |
+| F6 | Mosquitto auth без docker.sock (sidecar `mosquitto-auth-sync`) | L6 | M |
 | F7 | CI/CD (GitHub Actions) | L8 | S |
 | F8a | Manual provisioning form in UI | L4 | S |
 
@@ -118,12 +118,12 @@
 | D1 | Telegram-бот: часть server или отдельный контейнер? | **Часть server (Fastify process)** | Проще deploy, доступ к БД и сервисам без IPC. Telegram Bot API polling не конфликтует с Fastify |
 | D2 | Next.js: один порт (через Caddy) или два? | **Два порта по умолчанию. Caddy опционален (profile `https`)** | Не навязываем лишний контейнер для LAN. Клиент может использовать Caddy если хочет единую точку входа или HTTPS |
 | D3 | Первый admin: env seed или UI wizard? | **Env seed only** (`ADMIN_EMAIL`, `ADMIN_PASSWORD`) | Консистентно с P1 моделью (всё через env). Wizard — лишняя ветка кода с edge cases |
-| D4 | API_TOKEN deprecation | **API_TOKEN остаётся на весь P2 как deprecated machine-to-machine fallback** (роль admin). Provision-cli, simulator, существующие скрипты работают без изменений. Убирать — решение P3 |
+| D4 | Auth transport for API calls | **JWT-only** for all authenticated API requests in P2 runtime |
 | D5 | MQTT over TLS | **Не входит в P2** | Только если появится конкретный запрос от пилота |
-| D6 | Mosquitto Dynamic Security Plugin | **Preferred target. Final selection gated by spike S1.** Если S1 покажет блокирующие проблемы — fallback: вариант D (sidecar скрипт, убирающий docker.sock). Решение фиксируется после S1, до начала основной реализации F6 |
+| D6 | Mosquitto auth mechanism | **Final: sidecar `mosquitto-auth-sync` (implemented).** `server` использует `MOSQUITTO_RELOAD_URL`, docker.sock не используется |
 | D7 | Refresh token storage | **HTTP-only cookie. Hash хранится в БД (таблица `refresh_tokens`)** | Безопаснее чем localStorage. Стандартный паттерн |
 | D8 | Password hashing | **argon2id** | Рекомендован OWASP. `argon2` npm package |
-| D9 | Webhook secret для legacy ALERT_CALLBACK_URL | **Secret генерируется всегда. Legacy webhook тоже подписывается.** `webhooks.secret` NOT NULL. При миграции из P1: если `ALERT_CALLBACK_URL` задан → создаётся webhook с auto-generated secret, HMAC-подпись отправляется. Получатель может игнорировать подпись | Единообразие: все webhooks всегда подписаны. Нет nullable secret, нет ветвления «подписывать или нет» |
+| D9 | Webhook secret policy | **Secret обязателен для каждого webhook.** `webhooks.secret` NOT NULL, все доставки подписываются HMAC | Единообразие: все webhooks всегда подписаны. Нет nullable secret |
 | D10 | Auth/cookie topology при split-origin (`:3000` + `:8080`) | **Вариант A (фиксировано): Next.js (`web`) — auth gateway для браузера.** Браузер работает с auth только через UI-origin (`:3000` или Caddy same-origin), а `web` route handlers/server actions проксируют auth-запросы в Fastify `/api/v1/auth/*` по внутренней сети | Явно фиксирует владельца refresh-cookie и устраняет неоднозначность при двух портах |
 
 ---
@@ -183,12 +183,10 @@ refresh_tokens
 
 **Fastify auth plugin resolution order:**
 1. `Authorization: Bearer <JWT>` → verify JWT → extract user
-2. `Authorization: Bearer <API_TOKEN>` → match against env → synthetic user `{ role: 'admin', email: 'api_token' }`
-3. Neither → 401
+2. Neither → 401
 
 **Actor resolution (replaces P1 `?actor=` mechanism):**
 - JWT requests: `actor = users.email`
-- API_TOKEN requests: `actor = "api_token"` (immutable)
 - `?actor=` query parameter does not affect audit actor
 
 **Role enforcement:**
@@ -204,7 +202,7 @@ refresh_tokens
 | View devices, readings, alerts, audit | ✓ | ✓ | ✓ |
 | Export CSV/PDF | ✓ | ✓ | ✓ |
 
-**Seed:** server при старте: если `users` пуста и env `ADMIN_EMAIL` + `ADMIN_PASSWORD` заданы → создать admin user. Если `users` пуста и env не задан → log warning, система работает только через API_TOKEN.
+**Seed:** server при старте: если `users` пуста и env `ADMIN_EMAIL` + `ADMIN_PASSWORD` заданы → создать admin user. Если `users` пуста и env не задан → log warning, login disabled until admin credentials are set.
 
 **New API endpoints:**
 
@@ -295,7 +293,7 @@ Same format as GitHub webhooks.
 
 **Delivery success:** HTTP 2xx → `deliveredAt = now()`, no more retries. Non-2xx or network error → increment attempt, set `nextRetryAt`.
 
-**Legacy migration:** at startup, if `ALERT_CALLBACK_URL` env is set and `webhooks` table is empty → insert webhook with auto-generated secret, events: `['alert.triggered']`. `ALERT_CALLBACK_URL` marked deprecated, will be removed in P3.
+All webhook delivery goes only through webhook CRUD configuration (no `ALERT_CALLBACK_URL` migration path).
 
 **Integration:** alert service calls webhook service instead of direct HTTP callback. P1's `lib/callback.ts` replaced by webhook service.
 
@@ -312,25 +310,20 @@ POST   /api/v1/webhooks/:id/test            → send test event (admin)
 
 ### 6.4 Mosquitto auth без docker.sock (F6)
 
-**Status: механизм фиксируется после S1 (единственное техническое решение в P2, оставленное open до spike).**
-Текущее решение и чек-лист закрытия: `docs/P2/F6-DECISION.md`.
+**Status: implemented (P2).**  
+Подробности: `docs/P2/F6-DECISION.md`.
 
-**Preferred target:** Mosquitto Dynamic Security Plugin (built into Mosquitto 2.x).
+**Final mechanism in current runtime:**
+- Sidecar `mosquitto-auth-sync` (combined `mqtt` image).
+- `server` при provisioning/decommission/rotation вызывает `MOSQUITTO_RELOAD_URL` (`POST /reload`) внутри compose-сети.
+- Rebuild `passwd`/`acl` и `SIGHUP` выполняются внутри mqtt/auth-sync контейнера.
 
-Management via MQTT messages on `$CONTROL/dynamic-security/v1`. Server already connected to MQTT — sends management commands through same connection.
+**Security/ops constraints:**
+- docker.sock не монтируется в `server`.
+- reload-port не публикуется на host (internal-only control plane).
+- runtime files `passwd`/`acl` выставляются с безопасными правами/владельцем.
 
-**If S1 confirms viability:**
-- `lib/mosquitto-files.ts` → replaced by `lib/mosquitto-dynsec.ts` (MQTT-based client management)
-- `lib/mosquitto-reload.ts` → deleted (no SIGHUP needed)
-- docker.sock mount → removed from compose
-- `data/mosquitto/passwd`, `data/mosquitto/acl` → replaced by `data/mosquitto/dynamic-security.json` (Mosquitto's own state file)
-- mosquitto.conf updated: Dynamic Security Plugin enabled, password_file/acl_file removed
-- Reconcile at startup: server reads devices from DB, syncs to Dynamic Security via MQTT
-
-**If S1 reveals blocking issues — fallback:**
-Sidecar container (`mosquitto-auth-sync`): lightweight Node.js process that watches DB changes (pg LISTEN/NOTIFY or polling), rebuilds passwd/acl, sends SIGHUP to Mosquitto (containers share PID namespace or sidecar has process access). No docker.sock.
-
-**Migration from P1:** server reads devices from DB, creates them in Dynamic Security (or rebuilds files for fallback). Old passwd/acl files can be deleted.
+**Migration from P1:** остаётся совместимой — источником прав является БД, reconcile выполняется через sidecar reload-path.
 
 ### 6.5 Telegram-бот (F4) — SHOULD
 
@@ -363,7 +356,7 @@ calibration_records
   referenceValueC   real NOT NULL                — reference thermometer reading
   deviceValueC      real NOT NULL                — sensor reading
   offsetC           real NOT NULL                — applied correction
-  calibratedBy      uuid FK → users              — nullable (for API_TOKEN requests)
+  calibratedBy      uuid FK → users              — nullable (system/backfill compatibility)
   notes             text
   createdAt         timestamptz DEFAULT now()
   INDEX (deviceId, calibratedAt DESC)
@@ -518,7 +511,7 @@ All P1 endpoints remain. No breaking changes to existing request/response shapes
 
 | Existing endpoint | P2 change | Breaking? |
 |---|---|---|
-| All mutating endpoints | Auth: JWT or Bearer API_TOKEN (fallback) | No |
+| All mutating endpoints | Auth: JWT bearer only | No |
 | `?actor=` on mutating endpoints | Ignored for audit actor in P2 hardening. Actor is derived from auth context only | No |
 | `GET /devices` response | Added `calibrationOffsetC` field | No (additive) |
 | `GET .../readings` | Added `cursor` in response | No (additive) |
@@ -655,7 +648,7 @@ CREATE INDEX calibration_records_device_idx
 **Startup seed logic (server):**
 1. Run migration
 2. If `users` empty AND `ADMIN_EMAIL` + `ADMIN_PASSWORD` in env → create admin user
-3. If `webhooks` empty AND `ALERT_CALLBACK_URL` in env → create legacy webhook (auto-generated secret, events: `['alert.triggered']`)
+3. No legacy webhook bootstrap from env; webhooks are configured via API/UI
 
 ---
 
@@ -663,13 +656,13 @@ CREATE INDEX calibration_records_device_idx
 
 | # | Topic | Spike? | Blocks | Description |
 |---|---|---|---|---|
-| S1 | Mosquitto Dynamic Security Plugin | **Yes** | F6 | Verify: (1) works in stock `eclipse-mosquitto:2.0.20` image, (2) client create/delete/ACL via MQTT `$CONTROL` topic from mqtt.js, (3) reconcile from DB at startup, (4) state persists in JSON file across restarts. If fails → decision: sidecar fallback |
+| S1 | Mosquitto auth mechanism | **Completed** | F6 | Finalized to sidecar `mosquitto-auth-sync` without docker.sock; no additional spike work required for P2 closure |
 | S2 | Webhook retry on PostgreSQL | **Yes** | F5 | Verify: polling `webhook_deliveries WHERE nextRetryAt < now()` every 10s — overhead with 100+ pending. Expected: fine at P2 scale. If not → consider `pg_cron` or accept Redis in P2 |
 | R1 | Next.js SSR + Fastify API latency | No | – | Internal Docker network, expected <5ms. Monitor during development |
 | R2 | argon2 native module in Docker | No | – | `argon2` npm requires native build. Ensure Dockerfile has build tools in builder stage |
 | R3 | Telegram bot polling in same process | No | – | Telegram polling is non-blocking. Monitor event loop lag |
 
-**Spikes S1 and S2 must complete before main P2 development begins.**
+**Note:** S1 завершён и зафиксирован решением F6 (sidecar). S2 остаётся историческим риском, который учитывался в реализации webhook retry.
 
 ---
 
@@ -678,8 +671,8 @@ CREATE INDEX calibration_records_device_idx
 ### Phase 0: Spikes (2–3 days)
 
 ```
-[ ] S1: Mosquitto Dynamic Security Plugin — viability confirmed or fallback chosen
-[ ] S2: Webhook retry on PostgreSQL — overhead measured, approach confirmed
+[x] S1: Mosquitto auth mechanism finalized (sidecar without docker.sock)
+[x] S2: Webhook retry on PostgreSQL accepted for P2 scale
 ```
 
 ### Phase 1: Auth + DB migration (5 days)
@@ -690,26 +683,25 @@ Blocks: everything else
 
 [ ] Migration 0001_p2.sql (all new tables)
 [ ] Auth service: argon2id hashing, JWT issue/verify, refresh token rotation
-[ ] Auth plugin: JWT + API_TOKEN fallback, role extraction
+[ ] Auth plugin: JWT verification and role extraction
 [ ] Routes: /auth/login, /auth/refresh, /auth/logout
 [ ] Routes: /users CRUD, /users/me
-[ ] Actor resolution: JWT → email, API_TOKEN → "api_token"
+[ ] Actor resolution: JWT → email
 [ ] Admin seed from env
-[ ] Tests: login, role enforcement, token refresh, API_TOKEN fallback
+[ ] Tests: login, role enforcement, token refresh
 ```
 
-### Phase 2: Mosquitto Dynamic Security (3 days)
+### Phase 2: Mosquitto auth without docker.sock (3 days)
 
 ```
 Dependencies: S1 completed
 Parallel with: Phase 1
 
-[ ] lib/mosquitto-dynsec.ts (or fallback sidecar — per S1 result)
-[ ] Update provision.ts: create/delete client via new mechanism
-[ ] Reconcile at startup
-[ ] Update mosquitto.conf
-[ ] Update docker-compose: remove docker.sock mount
-[ ] Migration guide: P1 → P2 upgrade steps
+[x] Sidecar `mosquitto-auth-sync` for rebuild/reload path
+[x] Update provision.ts: reconcile via `MOSQUITTO_RELOAD_URL`
+[x] Reconcile at startup and during provision/decommission/rotation
+[x] Update docker-compose: remove docker.sock mount
+[x] Migration path from P1 documented (F6 decision doc)
 ```
 
 ### Phase 3: Webhook engine v2 (4 days)
@@ -721,7 +713,7 @@ Parallel with: Phase 2
 [ ] Webhook service: create, HMAC sign, deliver, retry polling loop
 [ ] Routes: /webhooks CRUD, deliveries, test
 [ ] Integration: alert service → webhook service
-[ ] Legacy migration: ALERT_CALLBACK_URL → auto webhook at startup
+[ ] No legacy webhook migration path in runtime
 [ ] Remove lib/callback.ts
 [ ] Tests: delivery, retry, HMAC verification, legacy migration
 ```
@@ -823,11 +815,9 @@ services:
       MQTT_URL: mqtt://mqtt:1883
       MQTT_ADMIN_USER: ${MQTT_ADMIN_USER:-server}
       MQTT_ADMIN_PASSWORD: ${MQTT_ADMIN_PASSWORD:?Set MQTT_ADMIN_PASSWORD}
-      API_TOKEN: ${API_TOKEN:-}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
-      ALERT_CALLBACK_URL: ${ALERT_CALLBACK_URL:-}
       DEVICE_OFFLINE_TIMEOUT_SEC: ${DEVICE_OFFLINE_TIMEOUT_SEC:-300}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
     ports:
@@ -865,4 +855,4 @@ services:
 - `mqtt`: volumes simplified (no passwd/acl bind mounts if Dynamic Security)
 - `web`: new container
 - `caddy`: new container (profile-gated)
-- `API_TOKEN`: now optional (deprecated fallback). `JWT_SECRET`: required
+- JWT-only auth in runtime (`JWT_SECRET` required)

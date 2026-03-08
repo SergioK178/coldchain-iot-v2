@@ -32,6 +32,9 @@ END$$;
 
 CREATE INDEX IF NOT EXISTS readings_device_ts_idx
   ON readings (device_id, "timestamp" DESC);
+
+CREATE INDEX IF NOT EXISTS alert_events_device_unack_idx
+  ON alert_events (device_id) WHERE acknowledged_at IS NULL;
 `;
 
 const P2_BACKFILL_SQL = `

@@ -11,9 +11,16 @@ export async function mqttPlugin(app: FastifyInstance) {
     clientId: `server_${process.pid}`,
   });
 
+  app.decorate('mqttConnected', false);
+
   client.on('connect', () => {
+    app.mqttConnected = true;
     app.log.info('MQTT connected');
     client.subscribe([MQTT.sub.allTelemetry, MQTT.sub.allStatus], { qos: 1 });
+  });
+
+  client.on('close', () => {
+    app.mqttConnected = false;
   });
 
   client.on('error', (err) => {

@@ -1,16 +1,12 @@
 import { loadEnv } from './config.js';
 import { runMigrations, createDb, seed, users } from '@sensor/db';
 import { buildApp } from './app.js';
-import { generateMosquittoHash } from './lib/mosquitto-files.js';
 import { reconcileMosquitto } from './services/provision.js';
 import { createAuditService } from './services/audit.js';
 import { hashPassword } from './lib/auth.js';
 
 async function main() {
   const env = loadEnv();
-  if (env.API_TOKEN) {
-    console.warn('API_TOKEN is enabled (deprecated fallback in P2). Prefer JWT user auth where possible.');
-  }
 
   // 1. Migrate
   console.log('Running migrations...');
@@ -27,20 +23,17 @@ async function main() {
   } else {
     const userCount = await db.select({ id: users.id }).from(users).limit(1);
     if (userCount.length === 0) {
-      console.warn('No users in DB and ADMIN_EMAIL/ADMIN_PASSWORD not set — login disabled, use API_TOKEN only.');
+      console.warn('No users in DB and ADMIN_EMAIL/ADMIN_PASSWORD not set — login disabled.');
     }
   }
   await seed(db, seedOptions);
   console.log('Seed complete.');
 
-  // 3. Generate admin password hash for Mosquitto
-  const adminPasswordHash = await generateMosquittoHash(env.MQTT_ADMIN_PASSWORD);
-
-  // 4. Startup reconcile (P7)
+  // 3. Startup reconcile (P7)
   console.log('Running Mosquitto reconcile...');
   const audit = createAuditService(db);
   try {
-    await reconcileMosquitto({ db, audit, env, adminPasswordHash });
+    await reconcileMosquitto({ db, audit, env });
     console.log('Mosquitto reconcile complete.');
   } catch (err) {
     console.error('Mosquitto reconcile failed (non-fatal at startup):', err);
@@ -48,13 +41,13 @@ async function main() {
 
   await sql.end();
 
-  // 5. Build app
-  const app = await buildApp(env, adminPasswordHash);
+  // 4. Build app
+  const app = await buildApp(env);
 
-  // 6. Listen
+  // 5. Listen
   await app.listen({ host: env.HTTP_HOST, port: env.HTTP_PORT });
 
-  // 7. Offline check timer (every 60s)
+  // 6. Offline check timer (every 60s)
   const offlineTimer = setInterval(async () => {
     try {
       const count = await app.deviceService.checkOfflineDevices(env.DEVICE_OFFLINE_TIMEOUT_SEC);

@@ -67,7 +67,7 @@ export async function locationRoutes(app: FastifyInstance) {
       action: 'location.created',
       entityType: 'location',
       entityId: created!.id,
-      actor: request.actor ?? 'api_token',
+      actor: request.actor ?? 'system',
       details: { name: created!.name },
     });
     return reply.code(201).send({ ok: true, data: created });
@@ -98,7 +98,7 @@ export async function locationRoutes(app: FastifyInstance) {
       action: 'location.updated',
       entityType: 'location',
       entityId: id,
-      actor: request.actor ?? 'api_token',
+      actor: request.actor ?? 'system',
       details: updates,
     });
     return reply.send({ ok: true, data: updated });
@@ -133,7 +133,7 @@ export async function locationRoutes(app: FastifyInstance) {
       action: 'location.deleted',
       entityType: 'location',
       entityId: id,
-      actor: request.actor ?? 'api_token',
+      actor: request.actor ?? 'system',
       details: { name: existing.name },
     });
     return reply.send({ ok: true, data: {} });
@@ -177,7 +177,7 @@ export async function locationRoutes(app: FastifyInstance) {
       action: 'zone.created',
       entityType: 'zone',
       entityId: created!.id,
-      actor: request.actor ?? 'api_token',
+      actor: request.actor ?? 'system',
       details: { name: created!.name, locationId: id },
     });
     return reply.code(201).send({ ok: true, data: created });
@@ -205,7 +205,7 @@ export async function locationRoutes(app: FastifyInstance) {
       action: 'zone.updated',
       entityType: 'zone',
       entityId: id,
-      actor: request.actor ?? 'api_token',
+      actor: request.actor ?? 'system',
       details: { name: parsed.data.name },
     });
     return reply.send({ ok: true, data: updated });
@@ -236,7 +236,7 @@ export async function locationRoutes(app: FastifyInstance) {
       action: 'zone.deleted',
       entityType: 'zone',
       entityId: id,
-      actor: request.actor ?? 'api_token',
+      actor: request.actor ?? 'system',
       details: { name: existing.name },
     });
     return reply.send({ ok: true, data: {} });

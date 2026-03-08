@@ -89,7 +89,7 @@ export async function webhookRoutes(app: FastifyInstance) {
       action: 'webhook.created',
       entityType: 'webhook',
       entityId: created!.id,
-      actor: request.actor ?? 'api_token',
+      actor: request.actor ?? 'system',
       details: { url: created!.url },
     });
     return reply.code(201).send({
@@ -140,7 +140,7 @@ export async function webhookRoutes(app: FastifyInstance) {
       action: 'webhook.updated',
       entityType: 'webhook',
       entityId: id,
-      actor: request.actor ?? 'api_token',
+      actor: request.actor ?? 'system',
       details: updates,
     });
     return reply.send({
@@ -169,7 +169,7 @@ export async function webhookRoutes(app: FastifyInstance) {
       action: 'webhook.deleted',
       entityType: 'webhook',
       entityId: id,
-      actor: request.actor ?? 'api_token',
+      actor: request.actor ?? 'system',
       details: { url: existing.url },
     });
     return reply.send({ ok: true, data: {} });

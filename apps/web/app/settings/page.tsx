@@ -28,13 +28,17 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/lib/api';
 import { toast } from 'sonner';
+import { useI18n } from '@/components/I18nProvider';
 
 type User = { id: string; email: string; name: string | null; role: string };
+type Me = { id: string; email: string; telegramChatId?: string | null };
 type Webhook = { id: string; url: string; events: string[]; isActive: boolean; createdAt?: string };
 
 export default function SettingsPage() {
+  const { t } = useI18n();
   const [users, setUsers] = useState<User[]>([]);
   const [webhooks, setWebhooks] = useState<Webhook[]>([]);
+  const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -56,14 +60,16 @@ export default function SettingsPage() {
     setLoading(true);
     setError('');
     try {
-      const [uRes, wRes] = await Promise.all([
+      const [uRes, wRes, meRes] = await Promise.all([
         apiGet<User[]>('/api/v1/users'),
         apiGet<Webhook[]>('/api/v1/webhooks'),
+        apiGet<Me>('/api/v1/users/me').catch(() => ({ data: null as Me | null })),
       ]);
       setUsers(uRes.data ?? []);
       setWebhooks(wRes.data ?? []);
+      setMe(meRes.data ?? null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Доступ только для admin');
+      setError(e instanceof Error ? e.message : t('settings_admin_only'));
     } finally {
       setLoading(false);
     }
@@ -85,7 +91,7 @@ export default function SettingsPage() {
         name: userFormName || undefined,
         role: userFormRole,
       });
-      toast.success('Пользователь создан');
+      toast.success(t('settings_user_created'));
       setUserCreateOpen(false);
       setUserFormEmail('');
       setUserFormPassword('');
@@ -102,11 +108,11 @@ export default function SettingsPage() {
   };
 
   const handleDeleteUser = async (userId: string) => {
-    if (!confirm('Удалить пользователя?')) return;
+    if (!confirm(t('settings_delete_user'))) return;
     setSubmitting(true);
     try {
       await apiDelete(`/api/v1/users/${userId}`);
-      toast.success('Пользователь удалён');
+      toast.success(t('settings_user_deleted'));
       load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Ошибка');
@@ -125,7 +131,7 @@ export default function SettingsPage() {
         url: webhookFormUrl.trim(),
         events: webhookFormEvents.length ? webhookFormEvents : ['alert.triggered'],
       });
-      toast.success('Webhook создан');
+      toast.success(t('settings_webhook_created'));
       setWebhookCreateOpen(false);
       setWebhookFormUrl('');
       setWebhookFormEvents(['alert.triggered']);
@@ -140,11 +146,11 @@ export default function SettingsPage() {
   };
 
   const handleDeleteWebhook = async (webhookId: string) => {
-    if (!confirm('Удалить webhook?')) return;
+    if (!confirm(t('settings_delete_webhook'))) return;
     setSubmitting(true);
     try {
       await apiDelete(`/api/v1/webhooks/${webhookId}`);
-      toast.success('Webhook удалён');
+      toast.success(t('settings_webhook_deleted'));
       load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Ошибка');
@@ -165,7 +171,7 @@ export default function SettingsPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <h1 className="text-3xl font-semibold">Настройки</h1>
+        <h1 className="text-3xl font-semibold">{t('settings_title')}</h1>
         <Skeleton className="h-64 w-full" />
       </div>
     );
@@ -174,7 +180,7 @@ export default function SettingsPage() {
   if (error) {
     return (
       <div className="space-y-4">
-        <h1 className="text-3xl font-semibold">Настройки</h1>
+        <h1 className="text-3xl font-semibold">{t('settings_title')}</h1>
         <Card className="border-destructive">
           <CardContent className="pt-6"><p className="text-destructive">{error}</p></CardContent>
         </Card>
@@ -185,38 +191,44 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h1 className="text-3xl font-semibold">Настройки</h1>
+        <h1 className="text-3xl font-semibold">{t('settings_title')}</h1>
         <Link href="/settings/telegram">
-          <Button variant="outline" size="sm">Telegram</Button>
+          <Button
+            variant="outline"
+            size="sm"
+            title={me?.telegramChatId ? t('settings_telegram_linked') : t('settings_telegram_link')}
+          >
+            {t('settings_telegram')}
+          </Button>
         </Link>
       </div>
 
       <Tabs defaultValue="users" className="w-full">
         <TabsList>
-          <TabsTrigger value="users">Пользователи</TabsTrigger>
-          <TabsTrigger value="webhooks">Webhooks</TabsTrigger>
+          <TabsTrigger value="users">{t('settings_users')}</TabsTrigger>
+          <TabsTrigger value="webhooks">{t('settings_webhooks')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Пользователи</CardTitle>
+              <CardTitle>{t('settings_users')}</CardTitle>
               <Button onClick={() => { setUserFormError(''); setUserCreateOpen(true); }}>
                 <Plus className="h-4 w-4 mr-2" />
-                Добавить
+                {t('settings_add')}
               </Button>
             </CardHeader>
             <CardContent>
               {users.length === 0 ? (
-                <p className="text-muted-foreground py-4">Нет пользователей</p>
+                <p className="text-muted-foreground py-4">{t('settings_no_users')}</p>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Email</TableHead>
-                      <TableHead>Имя</TableHead>
-                      <TableHead>Роль</TableHead>
-                      <TableHead className="w-[100px]">Действия</TableHead>
+                      <TableHead>{t('settings_email')}</TableHead>
+                      <TableHead>{t('settings_name')}</TableHead>
+                      <TableHead>{t('settings_role')}</TableHead>
+                      <TableHead className="w-[100px]">{t('locations_actions')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -240,23 +252,23 @@ export default function SettingsPage() {
         <TabsContent value="webhooks" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Webhooks</CardTitle>
+              <CardTitle>{t('settings_webhooks')}</CardTitle>
               <Button onClick={() => { setWebhookFormError(''); setWebhookCreateOpen(true); }}>
                 <Plus className="h-4 w-4 mr-2" />
-                Добавить
+                {t('settings_add')}
               </Button>
             </CardHeader>
             <CardContent>
               {webhooks.length === 0 ? (
-                <p className="text-muted-foreground py-4">Нет webhooks</p>
+                <p className="text-muted-foreground py-4">{t('settings_no_webhooks')}</p>
               ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>URL</TableHead>
-                      <TableHead>События</TableHead>
-                      <TableHead>Статус</TableHead>
-                      <TableHead className="w-[140px]">Действия</TableHead>
+                      <TableHead>{t('settings_url')}</TableHead>
+                      <TableHead>{t('settings_events')}</TableHead>
+                      <TableHead>{t('settings_status')}</TableHead>
+                      <TableHead className="w-[140px]">{t('locations_actions')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -264,7 +276,7 @@ export default function SettingsPage() {
                       <TableRow key={w.id}>
                         <TableCell className="font-mono text-sm truncate max-w-[200px]">{w.url}</TableCell>
                         <TableCell className="text-sm">{w.events?.join(', ') ?? '—'}</TableCell>
-                        <TableCell><Badge variant={w.isActive ? 'success' : 'secondary'}>{w.isActive ? 'Вкл' : 'Выкл'}</Badge></TableCell>
+                        <TableCell><Badge variant={w.isActive ? 'success' : 'secondary'}>{w.isActive ? t('settings_on') : t('settings_off')}</Badge></TableCell>
                         <TableCell>
                           <div className="flex gap-1">
                             <Button variant="ghost" size="sm" onClick={() => handleTestWebhook(w.id)}><Send className="h-4 w-4" /></Button>
@@ -284,26 +296,26 @@ export default function SettingsPage() {
       <Dialog open={userCreateOpen} onOpenChange={setUserCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Новый пользователь</DialogTitle>
-            <DialogDescription>Email и пароль обязательны. Роль по умолчанию — viewer.</DialogDescription>
+            <DialogTitle>{t('settings_new_user')}</DialogTitle>
+            <DialogDescription>{t('settings_new_user_desc')}</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateUser}>
             <div className="grid gap-4 py-4">
               {userFormError && <p className="text-sm text-destructive" role="alert">{userFormError}</p>}
               <div className="grid gap-2">
-                <Label>Email</Label>
+                <Label>{t('settings_email')}</Label>
                 <Input type="email" value={userFormEmail} onChange={(e) => setUserFormEmail(e.target.value)} required />
               </div>
               <div className="grid gap-2">
-                <Label>Пароль</Label>
+                <Label>{t('settings_password')}</Label>
                 <Input type="password" value={userFormPassword} onChange={(e) => setUserFormPassword(e.target.value)} required minLength={8} />
               </div>
               <div className="grid gap-2">
-                <Label>Имя</Label>
+                <Label>{t('settings_name')}</Label>
                 <Input value={userFormName} onChange={(e) => setUserFormName(e.target.value)} />
               </div>
               <div className="grid gap-2">
-                <Label>Роль</Label>
+                <Label>{t('settings_role')}</Label>
                 <select
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                   value={userFormRole}
@@ -316,8 +328,8 @@ export default function SettingsPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setUserCreateOpen(false)}>Отмена</Button>
-              <Button type="submit" disabled={submitting}>Создать</Button>
+              <Button type="button" variant="outline" onClick={() => setUserCreateOpen(false)}>{t('locations_cancel')}</Button>
+              <Button type="submit" disabled={submitting}>{t('locations_create')}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -326,28 +338,28 @@ export default function SettingsPage() {
       <Dialog open={webhookCreateOpen} onOpenChange={setWebhookCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Новый webhook</DialogTitle>
-            <DialogDescription>URL и хотя бы одно событие. По умолчанию — alert.triggered.</DialogDescription>
+            <DialogTitle>{t('settings_new_webhook')}</DialogTitle>
+            <DialogDescription>{t('settings_new_webhook_desc')}</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateWebhook}>
             <div className="grid gap-4 py-4">
               {webhookFormError && <p className="text-sm text-destructive" role="alert">{webhookFormError}</p>}
               <div className="grid gap-2">
-                <Label>URL</Label>
+                <Label>{t('settings_url')}</Label>
                 <Input type="url" value={webhookFormUrl} onChange={(e) => setWebhookFormUrl(e.target.value)} placeholder="https://..." required />
               </div>
               <div className="grid gap-2">
-                <Label>События (через запятую)</Label>
+                <Label>{t('settings_events')}</Label>
                 <Input
                   value={webhookFormEvents.join(', ')}
                   onChange={(e) => setWebhookFormEvents(e.target.value.split(',').map((s) => s.trim()).filter(Boolean) as string[])}
-                  placeholder="alert.triggered, device.offline"
+                  placeholder={t('settings_events_placeholder')}
                 />
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setWebhookCreateOpen(false)}>Отмена</Button>
-              <Button type="submit" disabled={submitting}>Создать</Button>
+              <Button type="button" variant="outline" onClick={() => setWebhookCreateOpen(false)}>{t('locations_cancel')}</Button>
+              <Button type="submit" disabled={submitting}>{t('locations_create')}</Button>
             </DialogFooter>
           </form>
         </DialogContent>

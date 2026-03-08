@@ -1,9 +1,18 @@
 const API_URL = process.env.API_URL || 'http://localhost:8080';
 
-export async function POST(request: Request) {
-  const cookie = request.headers.get('cookie') || '';
+type RefreshResult = {
+  accessToken?: string;
+  refreshSetCookie?: string | null;
+};
 
-  // Refresh through backend auth route and rotate refresh cookie if needed.
+const refreshInflight = new Map<string, Promise<RefreshResult>>();
+
+function extractRefreshToken(rawCookie: string): string | null {
+  const m = rawCookie.match(/(?:^|;\s*)refreshToken=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+async function runRefresh(cookie: string): Promise<RefreshResult> {
   let refreshRes: Response;
   try {
     refreshRes = await fetch(`${API_URL}/api/v1/auth/refresh`, {
@@ -11,14 +20,42 @@ export async function POST(request: Request) {
       headers: { cookie },
     });
   } catch {
+    throw new Error('UPSTREAM_UNAVAILABLE');
+  }
+
+  const refreshData = await refreshRes.json().catch(() => null);
+  return {
+    accessToken: refreshData?.data?.accessToken as string | undefined,
+    refreshSetCookie: refreshRes.headers.get('set-cookie'),
+  };
+}
+
+async function refreshWithSingleFlight(cookie: string): Promise<RefreshResult> {
+  const key = extractRefreshToken(cookie) ?? `raw:${cookie}`;
+  const existing = refreshInflight.get(key);
+  if (existing) return existing;
+  const promise = runRefresh(cookie).finally(() => {
+    refreshInflight.delete(key);
+  });
+  refreshInflight.set(key, promise);
+  return promise;
+}
+
+export async function POST(request: Request) {
+  const cookie = request.headers.get('cookie') || '';
+
+  // Refresh through backend auth route and rotate refresh cookie if needed.
+  let refresh: RefreshResult;
+  try {
+    refresh = await refreshWithSingleFlight(cookie);
+  } catch {
     return Response.json(
       { ok: false, error: { code: 'UPSTREAM_UNAVAILABLE', message: 'Backend API is unavailable' } },
       { status: 503 },
     );
   }
-  const refreshData = await refreshRes.json().catch(() => null);
-  const accessToken = refreshData?.data?.accessToken as string | undefined;
-  const refreshSetCookie = refreshRes.headers.get('set-cookie');
+  const accessToken = refresh.accessToken;
+  const refreshSetCookie = refresh.refreshSetCookie;
 
   if (!accessToken) {
     const headers = new Headers();
@@ -35,7 +72,13 @@ export async function POST(request: Request) {
   const path = payload?.path;
   const method = (payload?.method ?? 'GET').toUpperCase();
 
-  if (!path || !path.startsWith('/api/v1/')) {
+  if (!path || typeof path !== 'string') {
+    return Response.json(
+      { ok: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid path' } },
+      { status: 400 },
+    );
+  }
+  if (!path.startsWith('/api/v1/') || path.includes('..') || path.includes('//')) {
     return Response.json(
       { ok: false, error: { code: 'VALIDATION_ERROR', message: 'Invalid path' } },
       { status: 400 },

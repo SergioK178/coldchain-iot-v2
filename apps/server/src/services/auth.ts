@@ -35,7 +35,7 @@ export function createAuthService(deps: AuthServiceDeps) {
       const expiresAt = getRefreshExpiresAt();
       await db.insert(refreshTokens).values({
         userId: user.id,
-        tokenHash: hashRefreshToken(refreshValue),
+        tokenHash: hashRefreshToken(refreshValue, jwtSecret),
         expiresAt,
       });
 
@@ -58,7 +58,7 @@ export function createAuthService(deps: AuthServiceDeps) {
     },
 
     async refresh(refreshTokenValue: string) {
-      const hash = hashRefreshToken(refreshTokenValue);
+      const hash = hashRefreshToken(refreshTokenValue, jwtSecret);
       const [row] = await db
         .select({
           id: refreshTokens.id,
@@ -85,7 +85,7 @@ export function createAuthService(deps: AuthServiceDeps) {
       const expiresAt = getRefreshExpiresAt();
       await db.insert(refreshTokens).values({
         userId: user.id,
-        tokenHash: hashRefreshToken(newRefreshValue),
+        tokenHash: hashRefreshToken(newRefreshValue, jwtSecret),
         expiresAt,
       });
 
@@ -103,7 +103,7 @@ export function createAuthService(deps: AuthServiceDeps) {
     },
 
     async logout(refreshTokenValue: string) {
-      const hash = hashRefreshToken(refreshTokenValue);
+      const hash = hashRefreshToken(refreshTokenValue, jwtSecret);
       await db.delete(refreshTokens).where(eq(refreshTokens.tokenHash, hash));
     },
 

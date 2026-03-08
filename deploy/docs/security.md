@@ -18,59 +18,89 @@ iptables -A INPUT -p tcp --dport 1883 -s 192.168.1.0/24 -j ACCEPT
 iptables -A INPUT -p tcp --dport 1883 -j DROP
 ```
 
-MQTT over TLS (порт 8883) — запланировано в P2.
+> MQTT over TLS (порт 8883) — вне scope P2. Используйте TLS-terminating proxy (например, Caddy) для защиты канала при необходимости.
 
-## API
+### Перезагрузка Mosquitto (auth-sync)
 
-- Все endpoints (кроме `/api/v1/health`) требуют заголовок `Authorization: Bearer {API_TOKEN}`.
-- `API_TOKEN` — статическая строка, задаётся в `.env`. Минимальная длина: 32 символа.
-- Входные данные валидируются на каждом endpoint (Zod schema validation).
+В P2 отдельный sidecar-процесс `auth-sync` управляет `passwd`/`acl` файлами и перезагружает Mosquitto через внутренний HTTP API (`RELOAD_PORT=9080`). **Docker socket не используется.**
 
-Полноценная аутентификация (пользователи, роли, JWT) — запланировано в P2.
+При старте сервер вызывает reconcile через auth-sync, пересобирая `passwd` и `acl` из базы данных. Ручное редактирование не требуется.
+Canonical env: `MOSQUITTO_RELOAD_URL` (например, `http://mqtt:9080/reload`).
 
-### Рекомендации
+## Аутентификация API (P2)
 
-- Смените все пароли (`DB_PASSWORD`, `MQTT_ADMIN_PASSWORD`, `API_TOKEN`) перед продуктивной эксплуатацией.
-- Используйте криптографически стойкие пароли (минимум 32 символа).
-- Не передавайте `API_TOKEN` по незащищённым каналам.
+P2 поддерживает две схемы аутентификации:
 
-## Docker socket (P1 exception)
+### JWT (основная, для UI и машинных клиентов)
 
-В P1 контейнер `server` имеет read-only доступ к Docker socket (`/var/run/docker.sock`). Это необходимо для отправки сигнала SIGHUP в Mosquitto после обновления файлов `passwd`/`acl`, чтобы Mosquitto перечитал конфигурацию без перезапуска.
+1. Получите токены через `POST /api/v1/auth/login`:
+   ```json
+   { "email": "admin@example.com", "password": "..." }
+   ```
+2. В ответе — `accessToken` (Bearer JWT, короткий TTL) и `refreshToken` (HTTP-only cookie).
+3. Используйте в запросах: `Authorization: Bearer <accessToken>`.
+4. Обновляйте через `POST /api/v1/auth/refresh` (по cookie).
 
-**Риски:**
-- Доступ к Docker socket фактически предоставляет контроль над Docker Engine на хосте.
-- Mount выполнен в режиме read-only, но Docker API всё равно позволяет выполнять операции через HTTP.
+Защита: rate-limit на login и refresh; при превышении возвращается `429` и `Retry-After`.
 
-**Почему это допустимо в P1:**
-- Система предназначена для изолированной on-premise установки в локальной сети клиента.
-- Контейнер server не принимает произвольный ввод, который мог бы быть использован для злоупотребления Docker API.
+### Роли
 
-**План замены в P2:**
-- Переход на Mosquitto Dynamic Security Plugin или external auth plugin, который не требует пересборки файлов и SIGHUP.
+| Роль | Права |
+|------|-------|
+| `admin` | Полный доступ: provisioning, управление пользователями, webhooks, экспорт |
+| `operator` | Просмотр устройств, данных, калибровки |
 
-## P1: Границы пилотной эксплуатации
+## Webhooks (P2)
 
-Текущая сборка предназначена для контролируемого пилота в изолированной LAN.
+- **HMAC-SHA256 подпись**: каждый запрос webhook подписывается секретом, заданным при создании.
+- **Retry**: при неуспешной доставке — экспоненциальный backoff с ограниченным числом повторов.
+- **Allowlist**: `WEBHOOK_ALLOWLIST_HOSTS` ограничивает допустимые хосты назначения (опционально).
+- Localhost, private и link-local адреса отклоняются по умолчанию.
 
-| Аспект | Статус P1 | Планы |
-|---|---|---|
-| UI (веб-интерфейс) | Доступен в LAN; API-вызовы требуют Bearer token | P2: ролевая авторизация |
-| Swagger UI (`/api/docs`) | Доступен в LAN — осознанный компромисс | P2: отключение в production |
-| MQTT (порт 1883) | Plaintext, только LAN. **Не выставлять в интернет** | P2: MQTT over TLS (8883) |
-| Docker socket | Read-only mount для SIGHUP Mosquitto | P2: Dynamic Security Plugin |
-| Аутентификация API | Статический Bearer token | P2: JWT + пользователи/роли |
-| Webhook | Один POST, без повторов, без HMAC | P2: HMAC + retries |
+Заголовки webhook:
+```
+X-Webhook-ID: <webhook-id>
+X-Delivery-ID: <uuid>
+X-Timestamp: <unix-seconds>
+X-Signature-256: sha256=<hmac-hex>
+```
 
-**Не используйте эту сборку** для неконтролируемого развёртывания с доступом из интернета.
+Верификация HMAC:
+```python
+import hmac, hashlib
+expected = hmac.new(secret.encode(), payload_bytes, hashlib.sha256).hexdigest()
+assert f"sha256={expected}" == x_signature_256_header
+```
 
----
+## Входные данные
+
+- Все endpoints валидируются через Zod schemas.
+- `WEBHOOK_ALLOWLIST_HOSTS` — опциональный comma-separated список разрешённых хостов для webhook URLs.
+
+## Docker socket
+
+В P2 Docker socket **не используется**. Mosquitto управляется через `auth-sync` sidecar (HTTP API). Это устраняет риск P1, при котором сервер имел доступ к Docker Engine через socket.
+
+## Рекомендации
+
+- Смените все пароли (`DB_PASSWORD`, `MQTT_ADMIN_PASSWORD`, `ADMIN_PASSWORD`) и `JWT_SECRET` перед продуктивной эксплуатацией.
+- Используйте криптографически стойкие значения (минимум 32 символа для токенов).
+- Не передавайте `JWT_SECRET` по незащищённым каналам.
+- Для HTTPS: активируйте Caddy-профиль (`--profile https`) и настройте `Caddyfile`.
 
 ## Данные
 
 - Credentials PostgreSQL задаются через `.env`, не используются значения по умолчанию.
-- `.env.example` не содержит реальных паролей — только placeholder-комментарии.
-- Данные хранятся в bind mounts (`./data/postgres`, `./data/mosquitto`) на хосте клиента.
+- `.env.example` не содержит реальных секретов — только placeholder-комментарии.
+- Данные хранятся в bind mounts (`./data/postgres`, `./data/mosquitto`) на хосте.
+
+## Swagger UI
+
+Swagger UI (`/api/docs`) доступен по умолчанию. В production рекомендуется отключить: задайте `SWAGGER_UI_ENABLED=false` в `.env`. Альтернатива: закрыть через reverse proxy или ограничить доступ по IP.
+
+## API Proxy (Next.js → Backend)
+
+Веб-интерфейс использует `/api/proxy` для проксирования запросов к backend. Реализована защита от path traversal: пути с `..` или `//` отклоняются. Auth-пути (`/api/v1/auth/`) не проксируются.
 
 ## Troubleshooting: provisioning и reconcile
 
@@ -80,7 +110,7 @@ MQTT over TLS (порт 8883) — запланировано в P2.
 # Логи сервера
 docker compose logs server -f
 
-# Логи Mosquitto
+# Логи auth-sync / Mosquitto
 docker compose logs mqtt -f
 ```
 
@@ -98,26 +128,14 @@ cat data/mosquitto/passwd   # Должны быть записи для admin и
 cat data/mosquitto/acl      # Должны быть ACL правила
 ```
 
-### SIGHUP не применился
+### Mosquitto не принимает новые credentials
 
-Если после provisioning устройство не может подключиться:
-
-1. Проверьте, что контейнер Mosquitto называется `mqtt`:
+1. Убедитесь, что auth-sync контейнер (`mqtt`) запущен:
    ```bash
    docker compose ps
    ```
-
-2. Проверьте, что Docker socket доступен:
-   ```bash
-   docker compose exec server ls -la /var/run/docker.sock
-   ```
-
-3. Попробуйте перезапустить Mosquitto вручную:
-   ```bash
-   docker compose restart mqtt
-   ```
-
-4. Если SIGHUP не работает в вашем окружении (rootless Docker, Podman), перезапускайте Mosquitto после каждого provisioning:
+2. Проверьте логи auth-sync на ошибки reload.
+3. Перезапустите mqtt-контейнер вручную (reconcile запустится автоматически):
    ```bash
    docker compose restart mqtt
    ```

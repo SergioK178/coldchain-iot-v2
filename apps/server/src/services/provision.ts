@@ -1,13 +1,11 @@
-import { eq, isNull, and } from 'drizzle-orm';
-import { type Db, devices, zones, locations } from '@sensor/db';
+import { eq } from 'drizzle-orm';
+import { type Db, devices, zones } from '@sensor/db';
 import { parseSerial, ErrorCode, type ProvisionRequest } from '@sensor/shared';
 import {
   generateMosquittoHash,
   generateMqttPassword,
   mqttUsernameFromSerial,
-  rebuildMosquittoFiles,
 } from '../lib/mosquitto-files.js';
-import { reloadMosquitto } from '../lib/mosquitto-reload.js';
 import { type AuditService } from './audit.js';
 import { type Env } from '../config.js';
 
@@ -15,46 +13,19 @@ export interface ProvisionDeps {
   db: Db;
   audit: AuditService;
   env: Env;
-  adminPasswordHash: string;
-}
-
-async function getActiveDevicesForMosquitto(db: Db) {
-  return db
-    .select({
-      serial: devices.serial,
-      username: devices.mqttUsername,
-      passwordHash: devices.mqttPasswordHash,
-    })
-    .from(devices)
-    .where(isNull(devices.decommissionedAt));
 }
 
 export async function reconcileMosquitto(deps: ProvisionDeps) {
-  const reloadUrl = deps.env.MOSQUITTO_RELOAD_URL;
+  await reloadViaSidecar(deps.env.MOSQUITTO_RELOAD_URL);
+}
 
-  if (reloadUrl) {
-    // F6: sidecar does rebuild + SIGHUP; no docker.sock, no local file write
-    const res = await fetch(reloadUrl, { method: 'POST' });
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Mosquitto reload failed: ${res.status} ${body}`);
-    }
-    return;
+async function reloadViaSidecar(reloadUrl: string) {
+  // F6: sidecar does rebuild + SIGHUP; no docker.sock, no local file write
+  const res = await fetch(reloadUrl, { method: 'POST' });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Mosquitto reload failed: ${res.status} ${body}`);
   }
-
-  const activeDevices = await getActiveDevicesForMosquitto(deps.db);
-
-  await rebuildMosquittoFiles({
-    dataDir: deps.env.MOSQUITTO_DATA_DIR,
-    adminUsername: deps.env.MQTT_ADMIN_USER,
-    adminPasswordHash: deps.adminPasswordHash,
-    devices: activeDevices,
-  });
-
-  await reloadMosquitto({
-    socketPath: deps.env.DOCKER_SOCKET,
-    containerName: deps.env.MOSQUITTO_CONTAINER_NAME,
-  });
 }
 
 export async function provisionDevice(
@@ -64,9 +35,6 @@ export async function provisionDevice(
 ) {
   // P2: validate serial format and extract device type
   const parsed = parseSerial(input.serial);
-
-  // P12: reconcile before conflict check
-  await reconcileMosquitto(deps);
 
   // Check if serial already exists in any state.
   // Re-provision of the same serial is not allowed in current P1 contract.
@@ -202,5 +170,55 @@ export async function decommissionDevice(
 
   return {
     data: { serial, decommissionedAt: now.toISOString() },
+  } as const;
+}
+
+export async function rotateDeviceMqttCredentials(
+  deps: ProvisionDeps,
+  serial: string,
+  actor: string,
+) {
+  const [device] = await deps.db
+    .select({
+      id: devices.id,
+      serial: devices.serial,
+      mqttUsername: devices.mqttUsername,
+      decommissionedAt: devices.decommissionedAt,
+    })
+    .from(devices)
+    .where(eq(devices.serial, serial));
+
+  if (!device || device.decommissionedAt) {
+    return { error: ErrorCode.DEVICE_NOT_FOUND } as const;
+  }
+
+  const plaintextPassword = generateMqttPassword();
+  const mqttPasswordHash = await generateMosquittoHash(plaintextPassword);
+
+  await deps.db
+    .update(devices)
+    .set({ mqttPasswordHash })
+    .where(eq(devices.id, device.id));
+
+  await reconcileMosquitto(deps);
+
+  await deps.audit.append({
+    action: 'device.mqtt_credentials_rotated',
+    entityType: 'device',
+    entityId: device.id,
+    actor,
+    details: { serial: device.serial },
+  });
+
+  return {
+    data: {
+      serial: device.serial,
+      mqtt: {
+        username: device.mqttUsername,
+        password: plaintextPassword,
+        topic: `d/${device.serial}/t`,
+        statusTopic: `d/${device.serial}/s`,
+      },
+    },
   } as const;
 }

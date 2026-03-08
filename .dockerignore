@@ -1,8 +1,40 @@
+# Dependencies and build artifacts (rebuilt in container)
 node_modules
+**/node_modules
 dist
+**/dist
+.next
+**/.next
+
+# Git and IDE
 .git
+.gitignore
+.cursor*
+
+# Docs and non-runtime (deploy/docs нужен для web /docs/hardware-provisioning)
 docs
-deploy
-data
 *.md
+README*
+LICENSE
+
+# Data and secrets
+data
+**/data
 .env
+.env.*
+!.env.example
+deploy/data
+deploy/.env
+deploy/config
+
+# Tests and coverage (not needed for prod image)
+**/__tests__
+**/*.test.ts
+**/*.spec.ts
+coverage
+.nyc_output
+
+# Misc
+*.log
+*.tsbuildinfo
+.DS_Store

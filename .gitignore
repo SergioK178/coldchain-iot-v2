@@ -4,3 +4,11 @@ data/postgres
 .env
 deploy/.env
 *.tsbuildinfo
+apps/web/.next
+*.log
+coverage
+.nyc_output
+.DS_Store
+*.swp
+*.swo
+*.tmp

@@ -12,7 +12,8 @@ set -euo pipefail
 # =============================================================================
 
 API_URL="${API_URL:-http://localhost:8080}"
-API_TOKEN="${API_TOKEN:?Set API_TOKEN env variable}"
+ADMIN_EMAIL="${ADMIN_EMAIL:?Set ADMIN_EMAIL env variable}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:?Set ADMIN_PASSWORD env variable}"
 REPO_ROOT="${REPO_ROOT:-$(cd .. && pwd)}"
 DURATION_SEC="${DURATION_SEC:-120}"
 INTERVAL_SEC=10
@@ -33,12 +34,21 @@ cleanup() {
 trap cleanup EXIT
 
 api() {
-  curl -sf -H "Authorization: Bearer $API_TOKEN" -H "Content-Type: application/json" "$@"
+  curl -sf -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" "$@"
 }
 
 echo "=== Smoke Load Test ==="
 echo "Devices: $NUM_DEVICES, Interval: ${INTERVAL_SEC}s, Duration: ${DURATION_SEC}s"
 echo ""
+
+LOGIN=$(curl -sf -X POST "$API_URL/api/v1/auth/login" \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}")
+ACCESS_TOKEN=$(echo "$LOGIN" | jq -r '.data.accessToken')
+if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ]; then
+  echo "[FATAL] Failed to get JWT access token via /auth/login"
+  exit 1
+fi
 
 # --- Provision devices ---
 echo "Provisioning $NUM_DEVICES devices..."

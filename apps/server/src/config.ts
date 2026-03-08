@@ -14,19 +14,14 @@ const EnvSchema = z.object({
   MQTT_URL: z.string(),
   MQTT_ADMIN_USER: z.string().default('server'),
   MQTT_ADMIN_PASSWORD: z.string(),
-  API_TOKEN: z.string().min(1).optional().default(''),
   JWT_SECRET: z.string().min(32),
   ADMIN_EMAIL: z.string().email().optional().or(z.literal('')),
   ADMIN_PASSWORD: z.string().optional().default(''),
-  ALERT_CALLBACK_URL: z.string().url().optional().or(z.literal('')),
   DEVICE_OFFLINE_TIMEOUT_SEC: z.coerce.number().int().min(60).default(300),
   HTTP_HOST: z.string().default('0.0.0.0'),
   HTTP_PORT: z.coerce.number().int().default(8080),
-  MOSQUITTO_DATA_DIR: z.string().default('/mosquitto-data'),
-  MOSQUITTO_CONTAINER_NAME: z.string().default('mqtt'),
-  DOCKER_SOCKET: z.string().optional().default('/var/run/docker.sock'),
-  /** F6: when set, server POSTs here to trigger reload instead of using docker.sock */
-  MOSQUITTO_RELOAD_URL: z.string().url().optional(),
+  /** F6 (P2): server POSTs here to trigger auth-sync reload. Required in P2 runtime. */
+  MOSQUITTO_RELOAD_URL: z.string().url(),
   TELEGRAM_BOT_TOKEN: z.string().optional().default(''),
   AUTH_RATE_LIMIT_LOGIN_MAX: z.coerce.number().int().min(1).default(8),
   AUTH_RATE_LIMIT_LOGIN_WINDOW_SEC: z.coerce.number().int().min(1).default(300),
@@ -35,6 +30,8 @@ const EnvSchema = z.object({
   AUTH_RATE_LIMIT_BLOCK_SEC: z.coerce.number().int().min(0).default(300),
   AUTH_COOKIE_SECURE: z.enum(['true', 'false', 'auto']).default('auto'),
   WEBHOOK_ALLOWLIST_HOSTS: z.string().optional().default(''),
+  /** When false, Swagger UI at /api/docs is disabled (recommended for production). */
+  SWAGGER_UI_ENABLED: z.enum(['true', 'false']).default('true'),
 }).superRefine((env, ctx) => {
   if (env.ADMIN_PASSWORD && !isStrongPassword(env.ADMIN_PASSWORD)) {
     ctx.addIssue({

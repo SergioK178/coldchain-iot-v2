@@ -67,7 +67,7 @@ export async function alertRulesRoutes(app: FastifyInstance) {
       });
     }
 
-    const actor = request.actor ?? 'api_token';
+    const actor = request.actor ?? 'system';
     const rule = await app.alertService.createRule(device.id, parsed.data, actor);
 
     return reply.code(201).send({ ok: true, data: rule });
@@ -105,7 +105,7 @@ export async function alertRulesRoutes(app: FastifyInstance) {
       });
     }
 
-    const actor = request.actor ?? 'api_token';
+    const actor = request.actor ?? 'system';
     const result = await app.alertService.patchRule(id, parsed.data, actor);
 
     if ('error' in result) {
@@ -122,7 +122,7 @@ export async function alertRulesRoutes(app: FastifyInstance) {
   app.delete('/api/v1/alert-rules/:id', async (request, reply) => {
     if (!requireOperator(request, reply)) return;
     const { id } = request.params as { id: string };
-    const actor = request.actor ?? 'api_token';
+    const actor = request.actor ?? 'system';
     const result = await app.alertService.deleteRule(id, actor);
 
     if ('error' in result) {

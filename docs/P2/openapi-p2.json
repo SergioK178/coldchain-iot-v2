@@ -15,9 +15,6 @@
   "security": [
     {
       "jwtBearer": []
-    },
-    {
-      "apiTokenBearer": []
     }
   ],
   "components": {
@@ -26,11 +23,6 @@
         "type": "http",
         "scheme": "bearer",
         "description": "JWT access token (P2 user auth)"
-      },
-      "apiTokenBearer": {
-        "type": "http",
-        "scheme": "bearer",
-        "description": "Legacy API_TOKEN fallback (deprecated)"
       },
       "cookieAuth": {
         "type": "apiKey",
@@ -800,6 +792,43 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/devices/{serial}/rotate-mqtt": {
+      "post": {
+        "summary": "Rotate device MQTT credentials",
+        "description": "Admin-only operation. Returns new MQTT credentials; plaintext password is returned once.",
+        "responses": {
+          "200": {
+            "description": "Rotated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenericOk"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
           }
         }
       }

@@ -148,7 +148,8 @@ export function createWebhookService(deps: WebhookServiceDeps) {
       if (delivery) deliverOne(delivery.id).catch(() => {});
     },
 
-    startRetryLoop() {
+    startRetryLoop(logger?: { error: (o: object, msg: string) => void }) {
+      const log = logger ?? { error: () => {} };
       const interval = setInterval(async () => {
         try {
           const pending = await db
@@ -165,7 +166,9 @@ export function createWebhookService(deps: WebhookServiceDeps) {
           for (const p of pending) {
             await deliverOne(p.id);
           }
-        } catch (_) {}
+        } catch (err) {
+          log.error({ err: err instanceof Error ? err.message : String(err) }, 'Webhook retry loop error');
+        }
       }, POLL_INTERVAL_MS);
       return () => clearInterval(interval);
     },

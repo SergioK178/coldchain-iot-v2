@@ -21,7 +21,9 @@ export async function swaggerPlugin(app: FastifyInstance) {
     },
   });
 
-  await app.register(swaggerUi, {
-    routePrefix: '/api/docs',
-  });
+  if (app.env?.SWAGGER_UI_ENABLED !== 'false') {
+    await app.register(swaggerUi, {
+      routePrefix: '/api/docs',
+    });
+  }
 }
