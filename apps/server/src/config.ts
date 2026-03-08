@@ -32,6 +32,10 @@ const EnvSchema = z.object({
   WEBHOOK_ALLOWLIST_HOSTS: z.string().optional().default(''),
   /** When false, Swagger UI at /api/docs is disabled (recommended for production). */
   SWAGGER_UI_ENABLED: z.enum(['true', 'false']).default('true'),
+  /** Public URL for API (e.g. https://coldchain-service.site). Used for claim response mqtt_url. */
+  PUBLIC_API_URL: z.string().default(''),
+  /** Public MQTT URL for sensors (e.g. mqtt://coldchain-service.site:1883). If empty, derived from PUBLIC_API_URL. */
+  MQTT_PUBLIC_URL: z.string().default(''),
 }).superRefine((env, ctx) => {
   if (env.ADMIN_PASSWORD && !isStrongPassword(env.ADMIN_PASSWORD)) {
     ctx.addIssue({

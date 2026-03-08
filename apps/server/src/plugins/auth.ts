@@ -11,6 +11,7 @@ const AUTH_PATHS = new Set([
 function isPublicPath(url: string): boolean {
   if (url === '/api/v1/health' || url === '/api/v1/ready') return true;
   if (url === '/api/docs' || url.startsWith('/api/docs/')) return true;
+  if (url === '/api/v1/devices/claim') return true;
   return AUTH_PATHS.has(url);
 }
 

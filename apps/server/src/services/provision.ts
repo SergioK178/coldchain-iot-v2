@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { type Db, devices, zones } from '@sensor/db';
 import { parseSerial, ErrorCode, type ProvisionRequest } from '@sensor/shared';
+import { randomBytes } from 'node:crypto';
 import {
   generateMosquittoHash,
   generateMqttPassword,
@@ -8,6 +9,13 @@ import {
 } from '../lib/mosquitto-files.js';
 import { type AuditService } from './audit.js';
 import { type Env } from '../config.js';
+
+const ACTIVATION_TOKEN_BYTES = 24;
+const ACTIVATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+function generateActivationToken(): string {
+  return randomBytes(ACTIVATION_TOKEN_BYTES).toString('base64url');
+}
 
 export interface ProvisionDeps {
   db: Db;
@@ -72,6 +80,9 @@ export async function provisionDevice(
   // P4: hash for Mosquitto password_file
   const mqttPasswordHash = await generateMosquittoHash(plaintextPassword);
 
+  const activationToken = generateActivationToken();
+  const activationTokenExpiresAt = new Date(Date.now() + ACTIVATION_TOKEN_TTL_MS);
+
   // Insert device
   let device;
   try {
@@ -85,6 +96,8 @@ export async function provisionDevice(
         calibrationOffsetC: input.calibrationOffsetC ?? 0,
         mqttUsername,
         mqttPasswordHash,
+        activationToken,
+        activationTokenExpiresAt,
       })
       .returning();
   } catch (err: any) {
@@ -113,12 +126,15 @@ export async function provisionDevice(
     details: { serial: input.serial, deviceType: parsed.type },
   });
 
-  // P8: return plaintext password once
+  // P8: return plaintext password once + activation token for Wi-Fi AP claim flow
   return {
     data: {
       serial: input.serial,
       deviceType: parsed.type,
       displayName: input.displayName ?? null,
+      activationToken,
+      activationTokenExpiresAt: activationTokenExpiresAt.toISOString(),
+      activationTokenExpiresIn: Math.floor(ACTIVATION_TOKEN_TTL_MS / 1000),
       mqtt: {
         username: mqttUsername,
         password: plaintextPassword,
@@ -127,6 +143,88 @@ export async function provisionDevice(
       },
     },
   } as const;
+}
+
+export async function claimDevice(
+  deps: ProvisionDeps,
+  input: { serial: string; activationToken: string; firmwareVersion?: string; powerSource?: string },
+) {
+  const [device] = await deps.db
+    .select({
+      id: devices.id,
+      serial: devices.serial,
+      mqttUsername: devices.mqttUsername,
+      mqttPasswordHash: devices.mqttPasswordHash,
+      activationToken: devices.activationToken,
+      activationTokenExpiresAt: devices.activationTokenExpiresAt,
+      claimedAt: devices.claimedAt,
+      decommissionedAt: devices.decommissionedAt,
+    })
+    .from(devices)
+    .where(eq(devices.serial, input.serial));
+
+  if (!device || device.decommissionedAt) {
+    return { error: ErrorCode.DEVICE_NOT_FOUND } as const;
+  }
+  if (device.claimedAt) {
+    return { error: ErrorCode.DEVICE_ALREADY_CLAIMED } as const;
+  }
+  if (!device.activationToken || device.activationToken !== input.activationToken) {
+    return { error: ErrorCode.ACTIVATION_TOKEN_INVALID } as const;
+  }
+  if (!device.activationTokenExpiresAt || device.activationTokenExpiresAt <= new Date()) {
+    return { error: ErrorCode.ACTIVATION_TOKEN_EXPIRED } as const;
+  }
+
+  // Rotate credentials on claim: sensor gets fresh creds, old (UI-shown) become invalid
+  const plaintextPassword = generateMqttPassword();
+  const mqttPasswordHash = await generateMosquittoHash(plaintextPassword);
+
+  await deps.db
+    .update(devices)
+    .set({
+      mqttPasswordHash,
+      activationToken: null,
+      activationTokenExpiresAt: null,
+      claimedAt: new Date(),
+    })
+    .where(eq(devices.id, device.id));
+
+  await reconcileMosquitto(deps);
+
+  await deps.audit.append({
+    action: 'device.claimed',
+    entityType: 'device',
+    entityId: device.id,
+    actor: 'device',
+    details: { serial: device.serial, firmwareVersion: input.firmwareVersion },
+  });
+
+  return {
+    data: {
+      serial: device.serial,
+      mqtt: {
+        url: getMqttPublicUrl(deps.env),
+        username: device.mqttUsername,
+        password: plaintextPassword,
+        topic: `d/${device.serial}/t`,
+        statusTopic: `d/${device.serial}/s`,
+      },
+    },
+  } as const;
+}
+
+function getMqttPublicUrl(env: Env): string {
+  if (env.MQTT_PUBLIC_URL) return env.MQTT_PUBLIC_URL;
+  if (env.PUBLIC_API_URL) {
+    try {
+      const u = new URL(env.PUBLIC_API_URL);
+      return `mqtt://${u.hostname}:1883`;
+    } catch {
+      return 'mqtt://localhost:1883';
+    }
+  }
+  return 'mqtt://localhost:1883';
 }
 
 export async function decommissionDevice(

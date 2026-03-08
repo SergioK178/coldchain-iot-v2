@@ -10,6 +10,15 @@ export const ProvisionRequestSchema = z.object({
 
 export type ProvisionRequest = z.infer<typeof ProvisionRequestSchema>;
 
+export const ClaimRequestSchema = z.object({
+  serial: z.string().regex(/^SENS-[A-Z]{1,2}-\d{5}$/, 'Invalid serial format'),
+  activationToken: z.string().min(1, 'Activation token required'),
+  firmwareVersion: z.string().max(20).optional(),
+  powerSource: z.enum(['battery', 'wired']).optional(),
+});
+
+export type ClaimRequest = z.infer<typeof ClaimRequestSchema>;
+
 export const PatchDeviceSchema = z.object({
   displayName: z.string().max(255).optional(),
   zoneId: z.string().uuid().nullable().optional(),

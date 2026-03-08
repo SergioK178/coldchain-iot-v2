@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { ProvisionRequestSchema, PatchDeviceSchema, ErrorCode, parseSerial } from '@sensor/shared';
+import { ProvisionRequestSchema, PatchDeviceSchema, ClaimRequestSchema, ErrorCode, parseSerial } from '@sensor/shared';
 
 function requireAdmin(request: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply): boolean {
   if (request.user?.role !== 'admin') {
@@ -66,6 +66,35 @@ export async function deviceRoutes(app: FastifyInstance) {
     }
 
     return reply.code(201).send({ ok: true, data: result.data });
+  });
+
+  // POST /api/v1/devices/claim — public, no auth; sensor claims via activation token
+  app.post('/api/v1/devices/claim', async (request, reply) => {
+    const parsed = ClaimRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        ok: false,
+        error: { code: ErrorCode.VALIDATION_ERROR, message: parsed.error.message },
+      });
+    }
+
+    const result = await app.provision.claimDevice(app.provisionDeps, parsed.data);
+
+    if ('error' in result) {
+      const statusMap: Record<string, number> = {
+        [ErrorCode.DEVICE_NOT_FOUND]: 404,
+        [ErrorCode.ACTIVATION_TOKEN_INVALID]: 401,
+        [ErrorCode.ACTIVATION_TOKEN_EXPIRED]: 401,
+        [ErrorCode.DEVICE_ALREADY_CLAIMED]: 409,
+      };
+      const status = statusMap[result.error as string] ?? 400;
+      return reply.code(status).send({
+        ok: false,
+        error: { code: result.error, message: result.error },
+      });
+    }
+
+    return reply.send({ ok: true, data: result.data });
   });
 
   // GET /api/v1/devices

@@ -22,6 +22,12 @@ type MqttProvision = {
   topic?: string;
   statusTopic?: string;
 };
+type ProvisionResponse = {
+  mqtt?: MqttProvision;
+  activationToken?: string;
+  activationTokenExpiresAt?: string;
+  activationTokenExpiresIn?: number;
+};
 
 const STEPS = [
   { n: 1, label: 'Заявить' },
@@ -43,6 +49,8 @@ export default function OnboardPage() {
   const [locationId, setLocationId] = useState('');
   const [zoneId, setZoneId] = useState('');
   const [credentials, setCredentials] = useState<MqttProvision | null>(null);
+  const [activationToken, setActivationToken] = useState<string | null>(null);
+  const [activationExpiresIn, setActivationExpiresIn] = useState<number | null>(null);
   const [provisionedSerial, setProvisionedSerial] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
@@ -146,7 +154,7 @@ export default function OnboardPage() {
     setErrorCode(null);
     setSubmitting(true);
     try {
-      const res = await apiPost<{ mqtt?: MqttProvision }>(
+      const res = await apiPost<ProvisionResponse>(
         '/api/v1/devices/provision',
         {
           serial: serial.trim(),
@@ -155,7 +163,10 @@ export default function OnboardPage() {
           zoneId: zoneId || undefined,
         },
       );
-      setCredentials(res.data.mqtt ?? null);
+      const data = res.data as ProvisionResponse;
+      setCredentials(data.mqtt ?? null);
+      setActivationToken(data.activationToken ?? null);
+      setActivationExpiresIn(data.activationTokenExpiresIn ?? null);
       setProvisionedSerial(serial.trim());
       toast.success('Устройство зарегистрировано');
       router.refresh();
@@ -180,6 +191,8 @@ export default function OnboardPage() {
     setZoneId('');
     setZones([]);
     setCredentials(null);
+    setActivationToken(null);
+    setActivationExpiresIn(null);
     setProvisionedSerial('');
     setDeviceOnline(null);
     setFormError('');
@@ -367,74 +380,127 @@ export default function OnboardPage() {
         </Card>
       )}
 
-      {/* Step 3: Issue credentials */}
-      {step === 3 && credentials && (
+      {/* Step 3: Activation token (primary) + MQTT (advanced) */}
+      {step === 3 && (activationToken || credentials) && (
         <Card>
           <CardHeader>
-            <CardTitle>Шаг 3: Выданные учётные данные</CardTitle>
+            <CardTitle>Шаг 3: Активация датчика</CardTitle>
             <CardDescription>
-              MQTT-пароль показывается один раз. Скопируйте и сохраните его сейчас.
+              {activationToken
+                ? 'Подключитесь к Wi‑Fi датчика и введите код в портал. Либо используйте ручной режим (MQTT) ниже.'
+                : 'Скопируйте MQTT credentials для ручной настройки.'}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="rounded-md bg-muted p-4 text-sm space-y-2">
-              <p>
-                username:{' '}
-                <code className="bg-muted-foreground/10 px-1 rounded">{credentials.username}</code>
-              </p>
-              <p>
-                password:{' '}
-                <code className="bg-muted-foreground/10 px-1 rounded font-mono">{credentials.password}</code>
-              </p>
-              <p className="text-xs text-muted-foreground">
-                topic: <code>{credentials.topic ?? `d/${provisionedSerial}/t`}</code>,{' '}
-                status: <code>{credentials.statusTopic ?? `d/${provisionedSerial}/s`}</code>
-              </p>
-              <div className="flex gap-2 flex-wrap mt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void copyText(credentials.username, 'MQTT username')}
-                >
-                  Копировать username
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void copyText(credentials.password, 'MQTT пароль')}
-                >
-                  Копировать пароль
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    void copyText(
-                      JSON.stringify(
-                        {
+            {activationToken && (
+              <div className="rounded-md border-2 border-primary/30 bg-primary/5 p-4 space-y-3">
+                <p className="font-medium">Код активации (рекомендуемый способ)</p>
+                <p className="font-mono text-2xl tracking-widest break-all">{activationToken}</p>
+                <p className="text-sm text-muted-foreground">
+                  Код действителен {activationExpiresIn != null ? Math.round(activationExpiresIn / 3600) : 24} ч.
+                </p>
+                <div className="flex gap-2 flex-wrap">
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    onClick={() => void copyText(activationToken, 'Код активации')}
+                  >
+                    Копировать код
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      void copyText(
+                        JSON.stringify({
                           serial: provisionedSerial,
-                          mqtt: {
-                            username: credentials.username,
-                            password: credentials.password,
-                            topic: credentials.topic ?? `d/${provisionedSerial}/t`,
-                            statusTopic: credentials.statusTopic ?? `d/${provisionedSerial}/s`,
-                            url: 'mqtt://localhost:1883',
-                          },
-                        },
-                        null,
-                        2,
-                      ),
-                      'Provision JSON',
-                    )
-                  }
-                >
-                  Копировать JSON
-                </Button>
+                          serverBaseUrl: typeof window !== 'undefined' ? window.location.origin : '',
+                          activationToken,
+                          expiresAt: activationExpiresIn ? new Date(Date.now() + activationExpiresIn * 1000).toISOString() : null,
+                        }),
+                        'Provisioning bundle',
+                      )
+                    }
+                  >
+                    Копировать JSON bundle
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Инструкция: подключитесь к Wi‑Fi датчика (ColdChain-SENS-…), откройте http://192.168.4.1, введите Wi‑Fi объекта и этот код.
+                </p>
               </div>
-            </div>
+            )}
+
+            {credentials && (
+              <details className="rounded-md border p-4">
+                <summary className="cursor-pointer font-medium text-muted-foreground hover:text-foreground">
+                  Ручной режим (MQTT credentials)
+                </summary>
+                <div className="mt-3 space-y-2 text-sm">
+                  <p>
+                    username: <code className="bg-muted-foreground/10 px-1 rounded">{credentials.username}</code>
+                  </p>
+                  <p>
+                    password: <code className="bg-muted-foreground/10 px-1 rounded font-mono">{credentials.password}</code>
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    topic: <code>{credentials.topic ?? `d/${provisionedSerial}/t`}</code>,{' '}
+                    status: <code>{credentials.statusTopic ?? `d/${provisionedSerial}/s`}</code>
+                  </p>
+                  <div className="flex gap-2 flex-wrap mt-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void copyText(credentials.username, 'MQTT username')}
+                    >
+                      Копировать username
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void copyText(credentials.password, 'MQTT пароль')}
+                    >
+                      Копировать пароль
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        void copyText(
+                          JSON.stringify(
+                            {
+                              serial: provisionedSerial,
+                              mqtt: {
+                                username: credentials.username,
+                                password: credentials.password,
+                                topic: credentials.topic ?? `d/${provisionedSerial}/t`,
+                                statusTopic: credentials.statusTopic ?? `d/${provisionedSerial}/s`,
+                                url: 'mqtt://localhost:1883',
+                              },
+                            },
+                            null,
+                            2,
+                          ),
+                          'Provision JSON',
+                        )
+                      }
+                    >
+                      Копировать JSON
+                    </Button>
+                  </div>
+                  {activationToken && (
+                    <p className="text-xs text-amber-600 dark:text-amber-500 mt-2">
+                      Если датчик активирован через Wi‑Fi AP, эти credentials станут недействительны.
+                    </p>
+                  )}
+                </div>
+              </details>
+            )}
             <Button onClick={() => setStep(4)}>Далее: Инструкция по настройке →</Button>
           </CardContent>
         </Card>
@@ -446,26 +512,26 @@ export default function OnboardPage() {
           <CardHeader>
             <CardTitle>Шаг 4: Активировать датчик</CardTitle>
             <CardDescription>
-              Настройте прошивку/конфиг датчика <strong>{provisionedSerial}</strong>.
+              Настройте датчик <strong>{provisionedSerial}</strong> одним из способов.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="rounded-md border p-4 text-sm space-y-1">
+            <div className="rounded-md border p-4 text-sm space-y-3">
+              <p className="font-medium">Способ A — Wi‑Fi AP (рекомендуется)</p>
               <ol className="list-decimal ml-5 space-y-2 text-muted-foreground">
-                <li>
-                  Введите в конфиг датчика: <code>MQTT_URL</code>, <code>MQTT_USERNAME</code>,{' '}
-                  <code>MQTT_PASSWORD</code> из предыдущего шага.
-                </li>
-                <li>
-                  Включите датчик и убедитесь, что он подключён к той же сети, где работает MQTT-брокер.
-                </li>
-                <li>
-                  Датчик должен публиковать телеметрию в topic и LWT-статус в status-topic.
-                </li>
-                <li>
-                  После первого сообщения устройство появится онлайн — вы проверите это на следующем шаге.
-                </li>
+                <li>Подключитесь к Wi‑Fi датчика (ColdChain-{provisionedSerial})</li>
+                <li>Откройте в браузере: <code>http://192.168.4.1</code></li>
+                <li>Введите Wi‑Fi объекта и код активации из шага 3</li>
+                <li>Датчик сохранит credentials и подключится к MQTT</li>
               </ol>
+              <p className="font-medium pt-2">Способ B — ручная настройка (MQTT)</p>
+              <ol className="list-decimal ml-5 space-y-2 text-muted-foreground">
+                <li>Введите в конфиг: <code>MQTT_URL</code>, <code>MQTT_USERNAME</code>, <code>MQTT_PASSWORD</code> из предыдущего шага</li>
+                <li>Включите датчик и убедитесь, что он в той же сети, что и MQTT-брокер</li>
+              </ol>
+              <p className="text-xs text-muted-foreground pt-2">
+                После первого сообщения устройство появится онлайн — вы проверите это на следующем шаге.
+              </p>
             </div>
             <Link href="/docs/hardware-provisioning" target="_blank" className="block text-sm text-primary hover:underline mb-2">
               {t('onboard_hardware_guide')} →

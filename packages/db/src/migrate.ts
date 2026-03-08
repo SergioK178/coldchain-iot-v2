@@ -100,6 +100,13 @@ CREATE INDEX IF NOT EXISTS calibration_records_device_idx
   ON calibration_records(device_id, calibrated_at DESC);
 `;
 
+const ACTIVATION_TOKEN_SQL = `
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS activation_token VARCHAR(64);
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS activation_token_expires_at TIMESTAMPTZ;
+ALTER TABLE devices ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS devices_activation_token_idx ON devices(activation_token) WHERE activation_token IS NOT NULL;
+`;
+
 export async function runMigrations(databaseUrl: string) {
   const sql = postgres(databaseUrl, { max: 1 });
   const db = drizzle(sql);
@@ -112,6 +119,8 @@ export async function runMigrations(databaseUrl: string) {
   await sql.unsafe(POST_MIGRATION_SQL);
   // P2 schema safety net for legacy installations.
   await sql.unsafe(P2_BACKFILL_SQL);
+  // Activation token for Wi-Fi AP claim flow.
+  await sql.unsafe(ACTIVATION_TOKEN_SQL);
 
   await sql.end();
 }

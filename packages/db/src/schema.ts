@@ -42,6 +42,9 @@ export const devices = pgTable('devices', {
   decommissionedAt: timestamp('decommissioned_at', { withTimezone: true }),
   mqttUsername: varchar('mqtt_username', { length: 100 }).notNull().unique(),
   mqttPasswordHash: varchar('mqtt_password_hash', { length: 255 }).notNull(),
+  activationToken: varchar('activation_token', { length: 64 }),
+  activationTokenExpiresAt: timestamp('activation_token_expires_at', { withTimezone: true }),
+  claimedAt: timestamp('claimed_at', { withTimezone: true }),
 });
 
 // --- readings ---

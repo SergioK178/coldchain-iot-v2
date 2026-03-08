@@ -80,18 +80,35 @@ Serial прошивается в устройство и не меняется. 
 
 Перед подключением датчик должен быть зарегистрирован на сервере. Оператор делает это через API или UI.
 
-### Параметры после регистрации
+### Два пути активации
+
+| Путь | Описание |
+|------|----------|
+| **A — Wi‑Fi AP + activation token** (рекомендуется) | Оператор создаёт устройство в UI → получает код активации → подключается к Wi‑Fi датчика → вводит код в портал → датчик сам вызывает claim и получает MQTT credentials |
+| **B — Ручной MQTT** (fallback) | Оператор получает MQTT credentials в UI и вручную прошивает их в датчик (USB/BLE) |
+
+### Путь A — Wi‑Fi AP
+
+1. Датчик в SETUP MODE поднимает AP (ColdChain-SENS-…).
+2. Пользователь подключается к AP, открывает http://192.168.4.1.
+3. Вводит: Wi‑Fi объекта, пароль, activation token.
+4. Датчик подключается к Wi‑Fi, вызывает `POST /api/v1/devices/claim` с serial и token.
+5. Сервер возвращает MQTT credentials (url, username, password, topics).
+6. Датчик сохраняет и подключается к MQTT.
+
+**Датчик не генерирует credentials сам.** Сервер — единственный источник правды.
+
+### Параметры после регистрации/claim
 
 | Параметр | Пример | Описание |
 |----------|--------|----------|
-| MQTT_HOST | 192.168.1.50 | IP или hostname сервера |
-| MQTT_PORT | 1883 | По умолчанию |
+| MQTT_URL | mqtt://host:1883 | URL брокера (из claim response) |
 | MQTT_USERNAME | dev_sens_th_00042 | Формат `dev_{serial_lowercase}` |
-| MQTT_PASSWORD | a7f3e9b1c4d2... | 32 hex, выдаётся один раз |
+| MQTT_PASSWORD | a7f3e9b1c4d2... | 32 hex, выдаётся сервером |
 | Telemetry topic | d/SENS-TH-00042/t | Куда публиковать телеметрию |
 | Status topic | d/SENS-TH-00042/s | Куда публиковать online/offline |
 
-**Пароль:** 32 символа lowercase hex (`[a-f0-9]{32}`). Генерируется сервером. Возвращается **один раз** при регистрации.
+**Пароль:** 32 символа lowercase hex (`[a-f0-9]{32}`). Генерируется сервером. Возвращается при claim (путь A) или при provision (путь B).
 
 ---
 
@@ -222,9 +239,15 @@ LWT срабатывает при неожиданном отключении (c
 
 ```
 1. Загрузка
-   ├── Прочитать из NVS: MQTT_HOST, MQTT_PORT, USERNAME, PASSWORD, SERIAL
-   ├── Подключиться к Wi-Fi
-   └── Если нет credentials → режим настройки (AP/BLE)
+   ├── Прочитать из NVS: MQTT_URL, USERNAME, PASSWORD, SERIAL
+   ├── Подключиться к Wi-Fi (если credentials есть)
+   └── Если нет credentials → SETUP MODE:
+       ├── Поднять AP (ColdChain-SENS-…)
+       ├── Показать портал 192.168.4.1
+       ├── Пользователь вводит Wi-Fi объекта + activation token
+       ├── Подключиться к Wi-Fi объекта
+       ├── POST /api/v1/devices/claim → получить MQTT credentials
+       └── Сохранить в NVS, перезагрузка
 
 2. Подключение к MQTT
    ├── LWT: topic="d/{SERIAL}/s", payload="0", retain=true, qos=1
@@ -281,6 +304,7 @@ LWT срабатывает при неожиданном отключении (c
 ## 13. Ссылки
 
 - Provisioning API: `POST /api/v1/devices/provision` (см. coldchain-iot-v2)
+- Claim API: `POST /api/v1/devices/claim` (публичный, без auth; датчик получает MQTT credentials)
 - Hardware provisioning guide: `deploy/docs/hardware-provisioning.md`
 - Simulator (reference impl): `tools/simulator/` в coldchain-iot-v2
 - Payload schema: `packages/shared/src/schemas/payload.ts`
