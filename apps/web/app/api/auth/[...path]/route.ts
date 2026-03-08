@@ -24,8 +24,9 @@ async function proxy(
     );
   }
   const resHeaders = new Headers(res.headers);
-  const setCookie = res.headers.get('set-cookie');
-  if (setCookie) resHeaders.set('set-cookie', setCookie);
+  // Fetch API hides Set-Cookie (forbidden header); use getSetCookie() in Node.js
+  const setCookies = 'getSetCookie' in res.headers ? (res.headers as Headers & { getSetCookie(): string[] }).getSetCookie() : [];
+  for (const sc of setCookies) resHeaders.append('set-cookie', sc);
   return new Response(res.body, {
     status: res.status,
     statusText: res.statusText,

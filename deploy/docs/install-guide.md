@@ -50,11 +50,16 @@ MOSQUITTO_RELOAD_URL=http://mqtt:9080/reload
 
 ### 3. Запустить
 
+**Важно:** все команды `docker compose` выполняйте из директории `deploy/`:
+
 ```bash
+cd deploy
 docker compose up -d
 ```
 
-**Совет:** для ускорения сборки включите BuildKit (`export DOCKER_BUILDKIT=1`). Сборка будет кэшировать зависимости и пересобирать только изменённые сервисы.
+При запуске из корня проекта: `docker compose` найдёт `docker-compose.yml` в корне (он включает `deploy/docker-compose.yml`), но переменные окружения берутся из `.env` в текущей директории. Либо скопируйте `deploy/.env` в корень, либо создайте symlink: `ln -sf deploy/.env .env`.
+
+**BuildKit:** Dockerfile используют `RUN --mount=type=cache`. BuildKit включён по умолчанию в Docker 23+. При ошибках сборки выполните `export DOCKER_BUILDKIT=1`.
 
 Дождитесь, пока все контейнеры перейдут в статус healthy:
 
@@ -78,6 +83,16 @@ curl http://localhost:8080/api/v1/health
 curl http://localhost:8080/api/v1/ready
 # 200: {"ok": true}  |  503: {"ok": false, "error": "Database unavailable"}
 ```
+
+### Устранение неполадок
+
+| Проблема | Причина | Решение |
+|----------|---------|---------|
+| `no configuration file provided: not found` | Запуск не из `deploy/` | Выполняйте `cd deploy` перед `docker compose up` |
+| Ошибка сборки (cache, mount) | BuildKit отключён | `export DOCKER_BUILDKIT=1` |
+| Вход не работает (Invalid credentials) | Admin не создан | Задайте `ADMIN_EMAIL` и `ADMIN_PASSWORD` в `.env`, перезапустите server |
+| Вход не работает (cookie) | JWT_SECRET < 64 символов | Увеличьте `JWT_SECRET` до 64+ символов |
+| Backend API недоступен | Контейнер server не healthy | `docker compose logs server` — дождитесь миграций и seed |
 
 ## Аутентификация
 

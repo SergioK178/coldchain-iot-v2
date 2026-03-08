@@ -140,6 +140,8 @@ cd deploy
 docker compose up -d
 ```
 
+Команды `docker compose` выполняйте из `deploy/` (или из корня с symlink `ln -sf deploy/.env .env`). Подробнее: [install-guide.md](deploy/docs/install-guide.md#3-запустить).
+
 Проверить статус:
 
 ```bash
@@ -402,6 +404,7 @@ docker compose restart server
 ## Логи и диагностика
 
 ```bash
+cd deploy
 docker compose logs server -f    # логи API-сервера
 docker compose logs web -f       # логи Next.js UI
 docker compose logs mqtt -f      # логи Mosquitto

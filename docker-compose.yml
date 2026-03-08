@@ -1,0 +1,5 @@
+# Включает deploy/docker-compose.yml — позволяет запускать из корня проекта.
+# Рекомендуется: cd deploy && docker compose up -d (тогда .env берётся из deploy/)
+# Из корня: скопируйте deploy/.env в .env или создайте symlink deploy/.env → .env
+include:
+  - deploy/docker-compose.yml

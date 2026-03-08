@@ -24,9 +24,12 @@ async function runRefresh(cookie: string): Promise<RefreshResult> {
   }
 
   const refreshData = await refreshRes.json().catch(() => null);
+  // Fetch API hides Set-Cookie (forbidden header); use getSetCookie() in Node.js
+  const setCookies = 'getSetCookie' in refreshRes.headers ? (refreshRes.headers as Headers & { getSetCookie(): string[] }).getSetCookie() : [];
+  const refreshSetCookie = setCookies[0] ?? null;
   return {
     accessToken: refreshData?.data?.accessToken as string | undefined,
-    refreshSetCookie: refreshRes.headers.get('set-cookie'),
+    refreshSetCookie,
   };
 }
 
