@@ -198,15 +198,61 @@ pnpm --filter @sensor/provision-cli provision -- \
 - Username: из ответа provision
 - Password: из ответа provision
 
-## HTTPS (опционально)
+## HTTPS и домен на VPS
 
-Для production с TLS используйте профиль Caddy:
+### 1. DNS
 
-```bash
-docker compose --profile https up -d
+Укажите A-запись вашего домена на IP VPS:
+
+```
+coldchain.example.com  A  <IP_VPS>
 ```
 
-Отредактируйте `config/caddy/Caddyfile` под ваш домен. Certbot/ACME настраивается автоматически при наличии публичного домена.
+### 2. .env
+
+Добавьте в `deploy/.env`:
+
+```env
+DOMAIN=coldchain.example.com
+PUBLIC_API_URL=https://coldchain.example.com
+AUTH_COOKIE_SECURE=true
+```
+
+### 3. Порты
+
+Убедитесь, что 80 и 443 свободны. Если порт 3000 занят — задайте другой:
+
+```env
+WEB_PORT=3001
+```
+
+(При использовании Caddy доступ идёт через 80/443, порт web нужен только внутри Docker.)
+
+### 4. Запуск с HTTPS
+
+```bash
+cd deploy
+docker compose -f docker-compose.yml -f docker-compose.domain.yml --profile https up -d
+```
+
+Override `docker-compose.domain.yml` убирает проброс портов 3000 и 8080 — доступ только через Caddy (80/443). Это устраняет конфликт, если порт 3000 уже занят.
+
+Caddy автоматически получит сертификат Let's Encrypt и перенаправит HTTP на HTTPS.
+
+### 5. Проверка
+
+```bash
+curl https://coldchain.example.com/api/v1/health
+```
+
+Откройте в браузере: `https://coldchain.example.com`.
+
+### MQTT для датчиков
+
+Датчики подключаются через IP:1883. Укажите IP или домен VPS:
+
+- MQTT Host: IP вашего VPS или домен
+- MQTT Port: 1883
 
 ## Веб-интерфейс
 

@@ -126,6 +126,8 @@ services:
     depends_on:
       - server
       - web
+    environment:
+      DOMAIN: "${DOMAIN:-localhost}"
     ports:
       - "80:80"
       - "443:443"
