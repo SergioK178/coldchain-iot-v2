@@ -16,6 +16,7 @@ export default function SettingsTelegramPage() {
   const [expiresIn, setExpiresIn] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [testing, setTesting] = useState(false);
 
   const loadMe = async () => {
     try {
@@ -62,6 +63,18 @@ export default function SettingsTelegramPage() {
     }
   };
 
+  const handleTest = async () => {
+    setTesting(true);
+    try {
+      await apiPost('/api/v1/users/me/telegram/test', {});
+      toast.success('Тестовое сообщение отправлено в Telegram');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Ошибка');
+    } finally {
+      setTesting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -74,7 +87,7 @@ export default function SettingsTelegramPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link href="/settings">
+        <Link href="/alerts">
           <Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button>
         </Link>
         <h1 className="text-3xl font-semibold">Telegram</h1>
@@ -89,11 +102,16 @@ export default function SettingsTelegramPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           {me?.telegramChatId ? (
-            <div>
-              <p className="text-sm text-muted-foreground mb-2">Telegram привязан.</p>
-              <Button variant="outline" onClick={handleUnlink} disabled={submitting}>
-                Отвязать
-              </Button>
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">Telegram привязан.</p>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={handleTest} disabled={testing}>
+                  {testing ? 'Отправка...' : 'Проверить бота'}
+                </Button>
+                <Button variant="ghost" onClick={handleUnlink} disabled={submitting} className="text-destructive">
+                  Отвязать
+                </Button>
+              </div>
             </div>
           ) : (
             <>

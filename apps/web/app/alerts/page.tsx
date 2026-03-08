@@ -19,7 +19,9 @@ import { Badge } from '@/components/ui/badge';
 import { apiGet, apiPatch } from '@/lib/api';
 import { toast } from 'sonner';
 import { useI18n } from '@/components/I18nProvider';
+import { MessageCircle } from 'lucide-react';
 
+type Me = { id: string; email: string; telegramChatId?: string | null };
 type AlertEvent = {
   id: string;
   deviceSerial: string;
@@ -39,6 +41,7 @@ export default function AlertsPage() {
   const { t } = useI18n();
   const [alerts, setAlerts] = useState<AlertEvent[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
+  const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filterDevice, setFilterDevice] = useState('');
@@ -52,6 +55,15 @@ export default function AlertsPage() {
       setDevices(res.data ?? []);
     } catch {
       setDevices([]);
+    }
+  };
+
+  const loadMe = async () => {
+    try {
+      const res = await apiGet<Me>('/api/v1/users/me');
+      setMe(res.data ?? null);
+    } catch {
+      setMe(null);
     }
   };
 
@@ -76,6 +88,7 @@ export default function AlertsPage() {
 
   useEffect(() => {
     loadDevices();
+    loadMe();
   }, []);
 
   useEffect(() => {
@@ -97,7 +110,20 @@ export default function AlertsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-semibold">{t('alerts_title')}</h1>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h1 className="text-3xl font-semibold">{t('alerts_title')}</h1>
+        <Link href="/settings/telegram">
+          <Button
+            variant="outline"
+            size="sm"
+            title={me?.telegramChatId ? t('settings_telegram_linked') : t('settings_telegram_link')}
+          >
+            <MessageCircle className="h-4 w-4 mr-2" />
+            {t('settings_telegram')}
+            {me?.telegramChatId && <Badge variant="secondary" className="ml-2">✓</Badge>}
+          </Button>
+        </Link>
+      </div>
 
       <Card>
         <CardHeader>

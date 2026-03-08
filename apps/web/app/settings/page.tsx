@@ -31,14 +31,12 @@ import { toast } from 'sonner';
 import { useI18n } from '@/components/I18nProvider';
 
 type User = { id: string; email: string; name: string | null; role: string };
-type Me = { id: string; email: string; telegramChatId?: string | null };
 type Webhook = { id: string; url: string; events: string[]; isActive: boolean; createdAt?: string };
 
 export default function SettingsPage() {
   const { t } = useI18n();
   const [users, setUsers] = useState<User[]>([]);
   const [webhooks, setWebhooks] = useState<Webhook[]>([]);
-  const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -60,14 +58,12 @@ export default function SettingsPage() {
     setLoading(true);
     setError('');
     try {
-      const [uRes, wRes, meRes] = await Promise.all([
+      const [uRes, wRes] = await Promise.all([
         apiGet<User[]>('/api/v1/users'),
         apiGet<Webhook[]>('/api/v1/webhooks'),
-        apiGet<Me>('/api/v1/users/me').catch(() => ({ data: null as Me | null })),
       ]);
       setUsers(uRes.data ?? []);
       setWebhooks(wRes.data ?? []);
-      setMe(meRes.data ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : t('settings_admin_only'));
     } finally {
@@ -190,18 +186,7 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <h1 className="text-3xl font-semibold">{t('settings_title')}</h1>
-        <Link href="/settings/telegram">
-          <Button
-            variant="outline"
-            size="sm"
-            title={me?.telegramChatId ? t('settings_telegram_linked') : t('settings_telegram_link')}
-          >
-            {t('settings_telegram')}
-          </Button>
-        </Link>
-      </div>
+      <h1 className="text-3xl font-semibold">{t('settings_title')}</h1>
 
       <Tabs defaultValue="users" className="w-full">
         <TabsList>

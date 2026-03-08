@@ -88,6 +88,41 @@ export async function userRoutes(app: FastifyInstance) {
     return reply.send({ ok: true, data: {} });
   });
 
+  app.post('/api/v1/users/me/telegram/test', async (request, reply) => {
+    const u = request.user;
+    if (!u) {
+      return reply.code(403).send({
+        ok: false,
+        error: { code: ErrorCode.FORBIDDEN, message: 'Login required' },
+      });
+    }
+    const botToken = app.env.TELEGRAM_BOT_TOKEN;
+    if (!botToken) {
+      return reply.code(503).send({
+        ok: false,
+        error: { code: 'TELEGRAM_DISABLED', message: 'Telegram bot not configured' },
+      });
+    }
+    const [user] = await app.db.select({ telegramChatId: users.telegramChatId }).from(users).where(eq(users.id, u.sub));
+    if (!user?.telegramChatId) {
+      return reply.code(400).send({
+        ok: false,
+        error: { code: ErrorCode.VALIDATION_ERROR, message: 'Telegram not linked. Link first in Settings → Telegram.' },
+      });
+    }
+    const { sendTelegramMessage } = await import('../lib/telegram-send.js');
+    try {
+      await sendTelegramMessage(botToken, user.telegramChatId, '✅ Тестовое уведомление. Бот работает.');
+      return reply.send({ ok: true, data: {} });
+    } catch (err) {
+      app.log.error(err, 'Telegram test send failed');
+      return reply.code(502).send({
+        ok: false,
+        error: { code: 'TELEGRAM_ERROR', message: err instanceof Error ? err.message : 'Telegram API error' },
+      });
+    }
+  });
+
   app.patch('/api/v1/users/me/password', async (request, reply) => {
     const u = request.user;
     if (!u) {
