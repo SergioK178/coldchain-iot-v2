@@ -90,9 +90,29 @@ curl http://localhost:8080/api/v1/ready
 |----------|---------|---------|
 | `no configuration file provided: not found` | Запуск не из `deploy/` | Выполняйте `cd deploy` перед `docker compose up` |
 | Ошибка сборки (cache, mount) | BuildKit отключён | `export DOCKER_BUILDKIT=1` |
+| `Bind for 0.0.0.0:3000 failed: port is already allocated` | Порт 3000 занят | См. ниже «Диагностика порта 3000» |
 | Вход не работает (Invalid credentials) | Admin не создан | Задайте `ADMIN_EMAIL` и `ADMIN_PASSWORD` в `.env`, перезапустите server |
 | Вход не работает (cookie) | JWT_SECRET < 64 символов | Увеличьте `JWT_SECRET` до 64+ символов |
 | Backend API недоступен | Контейнер server не healthy | `docker compose logs server` — дождитесь миграций и seed |
+
+### Диагностика порта 3000
+
+Если Docker сообщает, что порт 3000 занят:
+
+```bash
+# Кто слушает порт (с PID и именем процесса)
+ss -tulnp | grep 3000
+lsof -i :3000
+
+# Контейнеры Docker, использующие порт
+docker ps -a --format '{{.Names}}\t{{.Ports}}' | grep 3000
+
+# Остановить все контейнеры проекта и проверить снова
+docker compose down
+ss -tulnp | grep 3000
+```
+
+Частые причины: другой Docker-проект, зависший контейнер; `systemd` или другой процесс. После освобождения порта — `docker compose up -d`.
 
 ## Аутентификация
 
@@ -220,22 +240,14 @@ AUTH_COOKIE_SECURE=true
 
 ### 3. Порты
 
-Убедитесь, что 80 и 443 свободны. Если порт 3000 занят — задайте другой:
-
-```env
-WEB_PORT=3001
-```
-
-(При использовании Caddy доступ идёт через 80/443, порт web нужен только внутри Docker.)
+Убедитесь, что 80 и 443 свободны.
 
 ### 4. Запуск с HTTPS
 
 ```bash
 cd deploy
-docker compose -f docker-compose.yml -f docker-compose.domain.yml --profile https up -d
+docker compose --profile https up -d
 ```
-
-Override `docker-compose.domain.yml` убирает проброс портов 3000 и 8080 — доступ только через Caddy (80/443). Это устраняет конфликт, если порт 3000 уже занят.
 
 Caddy автоматически получит сертификат Let's Encrypt и перенаправит HTTP на HTTPS.
 

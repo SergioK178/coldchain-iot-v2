@@ -1,9 +1,0 @@
-# Override для развёртывания на домене: доступ только через Caddy (80/443).
-# Использование: docker compose -f docker-compose.yml -f docker-compose.domain.yml --profile https up -d
-# Это устраняет конфликт порта 3000 — web и server доступны только внутри Docker.
-
-services:
-  server:
-    ports: []
-  web:
-    ports: []
