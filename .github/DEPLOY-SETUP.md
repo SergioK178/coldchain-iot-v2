@@ -64,3 +64,5 @@ docker compose -f deploy/docker-compose.yml up -d
 ```
 
 (уберите `--profile https`)
+
+файнал чек
