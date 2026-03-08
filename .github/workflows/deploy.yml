@@ -12,12 +12,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Prepare SSH key
+        run: |
+          mkdir -p .ssh-deploy
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > .ssh-deploy/key
+          chmod 600 .ssh-deploy/key
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          key_path: ${{ github.workspace }}/.ssh-deploy/key
           script: |
             set -e
             cd ${{ secrets.DEPLOY_PATH || '/var/www/coldchain-iot-v2' }}

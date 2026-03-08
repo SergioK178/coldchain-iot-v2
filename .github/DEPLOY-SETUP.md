@@ -14,6 +14,8 @@ cd coldchain-iot-v2
 
 ## 2. SSH-ключ для деплоя
 
+**Важно:** Никогда не публикуйте приватный ключ. Если ключ попал в лог/чат — сгенерируйте новый.
+
 Создайте отдельный ключ для GitHub Actions:
 
 ```bash
@@ -31,7 +33,7 @@ ssh-keygen -t ed25519 -C "github-deploy" -f deploy_key -N ""
 |--------|----------|
 | `DEPLOY_HOST` | IP или hostname VPS (например `77.110.112.137`) |
 | `DEPLOY_USER` | SSH-пользователь (например `root`) |
-| `DEPLOY_SSH_KEY` | Содержимое приватного ключа (`cat deploy_key`) |
+| `DEPLOY_SSH_KEY` | Содержимое приватного ключа (`cat deploy_key`) — целиком, со всеми строками и переносами |
 | `DEPLOY_PATH` | (опционально) Путь к репо на VPS, по умолчанию `/var/www/coldchain-iot-v2` |
 
 ## 4. Проверка
@@ -62,3 +64,5 @@ docker compose -f deploy/docker-compose.yml up -d
 ```
 
 (уберите `--profile https`)
+
+чек
