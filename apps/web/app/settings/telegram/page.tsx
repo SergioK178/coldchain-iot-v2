@@ -104,7 +104,7 @@ export default function SettingsTelegramPage() {
                 <div className="rounded-md bg-muted p-4 space-y-2">
                   <p className="font-mono text-2xl tracking-widest">{code}</p>
                   <p className="text-sm text-muted-foreground">
-                    Отправьте этот код боту в Telegram. Код действителен {expiresIn ?? 5} сек.
+                    Отправьте этот код боту в Telegram. Код действителен {expiresIn != null ? Math.round(expiresIn / 60) : 5} мин.
                   </p>
                   <p className="text-sm text-muted-foreground">
                     Если бот не добавлен — найдите его по имени (указан в инструкции развёртывания) или /start в Telegram.

@@ -27,7 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { apiDelete, apiGet, apiPatch, apiPost } from '@/lib/api';
+import { apiDelete, apiGet, apiPatch, apiPost, triggerUnauthorized } from '@/lib/api';
 import { toast } from 'sonner';
 
 type Device = {
@@ -251,6 +251,10 @@ export default function DeviceDetailPage() {
         }),
       });
       const raw = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        triggerUnauthorized();
+        return;
+      }
       const list = Array.isArray(raw?.data) ? raw.data.filter((r: unknown) => r != null && typeof r === 'object') : [];
       const nextCursor = raw?.cursor ?? null;
       setReadings((prev) => [...(Array.isArray(prev) ? prev : []), ...list]);

@@ -10,8 +10,18 @@ export class ApiError extends Error {
 }
 
 let onUnauthorized: (() => void) | null = null;
+let onUnauthorizedScheduled = false;
 export function setOnUnauthorized(handler: (() => void) | null) {
   onUnauthorized = handler;
+  if (!handler) onUnauthorizedScheduled = false;
+}
+
+/** Call when a raw fetch returns 401 (e.g. export, loadMoreReadings) */
+export function triggerUnauthorized() {
+  if (onUnauthorized && !onUnauthorizedScheduled) {
+    onUnauthorizedScheduled = true;
+    onUnauthorized();
+  }
 }
 
 async function proxyFetch(path: string, options: { method?: string; body?: unknown } = {}) {
@@ -27,7 +37,10 @@ async function proxyFetch(path: string, options: { method?: string; body?: unkno
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    if (res.status === 401 && onUnauthorized) onUnauthorized();
+    if (res.status === 401 && onUnauthorized && !onUnauthorizedScheduled) {
+      onUnauthorizedScheduled = true;
+      onUnauthorized();
+    }
     const err = new ApiError(data?.error?.message ?? 'Request failed', res.status, data?.error?.code);
     throw err;
   }

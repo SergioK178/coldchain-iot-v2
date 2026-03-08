@@ -6,14 +6,22 @@ import PDFDocument from 'pdfkit';
 const MAX_DAYS = 31;
 const MAX_ROWS = 5000;
 
-function parseSinceUntil(since?: string, until?: string): { since: Date; until: Date } | null {
-  if (!since || !until) return null;
+function parseSinceUntil(since?: string, until?: string): { since: Date; until: Date; error?: string } | { since: Date; until: Date } {
+  if (!since || !until || typeof since !== 'string' || typeof until !== 'string') {
+    return { since: new Date(0), until: new Date(0), error: 'Укажите даты «С» и «По»' };
+  }
   const s = new Date(since);
   const u = new Date(until);
-  if (Number.isNaN(s.getTime()) || Number.isNaN(u.getTime())) return null;
-  if (u <= s) return null;
+  if (Number.isNaN(s.getTime()) || Number.isNaN(u.getTime())) {
+    return { since: new Date(0), until: new Date(0), error: 'Неверный формат дат. Используйте календарь.' };
+  }
+  if (u <= s) {
+    return { since: s, until: u, error: 'Дата «По» должна быть позже даты «С»' };
+  }
   const days = (u.getTime() - s.getTime()) / (24 * 60 * 60 * 1000);
-  if (days > MAX_DAYS) return null;
+  if (days > MAX_DAYS) {
+    return { since: s, until: u, error: `Период не более ${MAX_DAYS} дней` };
+  }
   return { since: s, until: u };
 }
 
@@ -36,10 +44,10 @@ export async function exportRoutes(app: FastifyInstance) {
     }
 
     const range = parseSinceUntil(since, until);
-    if (!range) {
+    if ('error' in range && range.error) {
       return reply.code(400).send({
         ok: false,
-        error: { code: 'VALIDATION_ERROR', message: 'since and until required, max 31 days' },
+        error: { code: 'VALIDATION_ERROR', message: range.error },
       });
     }
 

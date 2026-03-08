@@ -2,7 +2,7 @@ import argon2 from 'argon2';
 import * as jose from 'jose';
 import { randomBytes, createHmac } from 'node:crypto';
 
-const JWT_ACCESS_TTL = '15m';
+const JWT_ACCESS_TTL = '1h';
 const REFRESH_DAYS = 7;
 const REFRESH_TOKEN_BYTES = 32;
 

@@ -41,3 +41,11 @@ export async function POST(
   const { path } = await params;
   return proxy(path, request);
 }
+
+export async function GET() {
+  return Response.json({ ok: false, error: { code: 'METHOD_NOT_ALLOWED', message: 'Use POST for auth' } }, { status: 405 });
+}
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204 });
+}

@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { apiGet } from '@/lib/api';
+import { apiGet, triggerUnauthorized } from '@/lib/api';
 import { toast } from 'sonner';
 
 type Device = { serial: string; displayName: string | null };
@@ -22,6 +22,22 @@ export default function ExportPage() {
   const [since, setSince] = useState('');
   const [until, setUntil] = useState('');
   const [loading, setLoading] = useState(true);
+
+  function toDatetimeLocal(d: Date): string {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const h = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    return `${y}-${m}-${day}T${h}:${min}`;
+  }
+
+  useEffect(() => {
+    const now = new Date();
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    setSince(toDatetimeLocal(weekAgo));
+    setUntil(toDatetimeLocal(now));
+  }, []);
   const [downloading, setDownloading] = useState<'csv' | 'pdf' | null>(null);
 
   useEffect(() => {
@@ -89,7 +105,8 @@ export default function ExportPage() {
       const contentType = res.headers.get('content-type') || '';
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        toast.error(data?.error?.message ?? 'Ошибка экспорта');
+        if (res.status === 401) triggerUnauthorized();
+        else toast.error(data?.error?.message ?? 'Ошибка экспорта');
         return;
       }
       if (contentType.includes('text/csv')) {
