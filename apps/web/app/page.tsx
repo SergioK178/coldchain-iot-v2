@@ -189,8 +189,14 @@ export default function DashboardPage() {
                               <ul className="ml-4 mt-1 flex flex-wrap gap-1">
                                 {devs.filter((d) => d?.serial).map((d) => (
                                   <li key={d.serial}>
-                                    <Link href={`/devices/${d.serial}`}>
-                                      <Badge variant={d.alertStatus === 'alert' ? 'destructive' : d.connectivityStatus === 'online' ? 'success' : 'secondary'}>
+                                    <Link
+                                      href={`/devices/${encodeURIComponent(d.serial)}`}
+                                      className="inline-block cursor-pointer rounded-full transition-opacity hover:opacity-90"
+                                    >
+                                      <Badge
+                                        variant={d.alertStatus === 'alert' ? 'destructive' : d.connectivityStatus === 'online' ? 'success' : 'secondary'}
+                                        className="max-w-[200px] truncate"
+                                      >
                                         {d.displayName || d.serial}
                                       </Badge>
                                     </Link>

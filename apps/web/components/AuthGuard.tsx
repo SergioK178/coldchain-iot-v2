@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { apiGet, ApiError, setOnUnauthorized } from '@/lib/api';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 
 export type User = { id: string; email: string; name?: string | null; role: string };
 
@@ -22,6 +23,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
 
   const goLogin = useCallback(() => {
+    toast.error('Сессия истекла. Войдите снова.');
     const target = pathname && pathname !== '/login' ? `/login?next=${encodeURIComponent(pathname)}` : '/login';
     router.replace(target);
   }, [pathname, router]);

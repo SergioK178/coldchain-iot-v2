@@ -92,7 +92,7 @@ export function QrScanner({
     setScanning(false);
   }, []);
 
-  useEffect(() => () => stop(), [stop]);
+  useEffect(() => () => { void stop(); }, [stop]);
 
   const containerId = useId().replace(/:/g, '-');
   const html5QrRef = useRef<{ stop: () => Promise<void> } | null>(null);
@@ -172,6 +172,7 @@ export function QrScanner({
               onScan(payload);
             });
           },
+          undefined, // qrCodeErrorCallback — не требуется
         );
       } catch (e) {
         if (!cancelled) {
