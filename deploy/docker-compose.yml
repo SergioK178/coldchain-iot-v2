@@ -128,6 +128,9 @@ services:
       - web
     environment:
       DOMAIN: "${DOMAIN:-localhost}"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     ports:
       - "80:80"
       - "443:443"
