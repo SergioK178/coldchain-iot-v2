@@ -24,7 +24,29 @@ export function triggerUnauthorized() {
   }
 }
 
-async function proxyFetch(path: string, options: { method?: string; body?: unknown } = {}) {
+/** Raw fetch to /api/proxy with 401 retry. Use for export, loadMoreReadings. */
+export async function proxyFetchRaw(
+  path: string,
+  options: { method?: string; body?: unknown } = {},
+): Promise<Response> {
+  const doReq = () =>
+    fetch('/api/proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ path, method: options.method ?? 'GET', body: options.body }),
+    });
+  let res = await doReq();
+  if (res.status === 401) {
+    await fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' });
+    await new Promise((r) => setTimeout(r, 400));
+    res = await doReq();
+    if (res.status === 401) triggerUnauthorized();
+  }
+  return res;
+}
+
+async function doProxyRequest(path: string, options: { method?: string; body?: unknown } = {}) {
   const res = await fetch('/api/proxy', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -36,15 +58,26 @@ async function proxyFetch(path: string, options: { method?: string; body?: unkno
     }),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    if (res.status === 401 && onUnauthorized && !onUnauthorizedScheduled) {
+  return { res, data };
+}
+
+async function proxyFetch(path: string, options: { method?: string; body?: unknown } = {}) {
+  const { res, data } = await doProxyRequest(path, options);
+  if (res.ok) return data;
+
+  if (res.status === 401) {
+    // Явный refresh + retry: при ротации токена запрос мог уйти со старым cookie
+    await fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' });
+    await new Promise((r) => setTimeout(r, 400));
+    const retry = await doProxyRequest(path, options);
+    if (retry.res.ok) return retry.data;
+    if (retry.res.status === 401 && onUnauthorized && !onUnauthorizedScheduled) {
       onUnauthorizedScheduled = true;
       onUnauthorized();
     }
-    const err = new ApiError(data?.error?.message ?? 'Request failed', res.status, data?.error?.code);
-    throw err;
   }
-  return data;
+
+  throw new ApiError(data?.error?.message ?? 'Request failed', res.status, data?.error?.code);
 }
 
 export async function apiGet<T = unknown>(path: string): Promise<{ ok: true; data: T }> {

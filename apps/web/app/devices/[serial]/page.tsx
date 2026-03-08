@@ -27,7 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { apiDelete, apiGet, apiPatch, apiPost, triggerUnauthorized } from '@/lib/api';
+import { apiDelete, apiGet, apiPatch, apiPost, proxyFetchRaw } from '@/lib/api';
 import { toast } from 'sonner';
 
 type Device = {
@@ -241,20 +241,12 @@ export default function DeviceDetailPage() {
     if (!readingsCursor || !serial) return;
     setReadingsLoadingMore(true);
     try {
-      const res = await fetch('/api/proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          path: `/api/v1/devices/${serial}/readings?limit=50&cursor=${encodeURIComponent(readingsCursor)}`,
-          method: 'GET',
-        }),
-      });
+      const res = await proxyFetchRaw(
+        `/api/v1/devices/${serial}/readings?limit=50&cursor=${encodeURIComponent(readingsCursor)}`,
+        { method: 'GET' },
+      );
       const raw = await res.json().catch(() => ({}));
-      if (res.status === 401) {
-        triggerUnauthorized();
-        return;
-      }
+      if (!res.ok) return;
       const list = Array.isArray(raw?.data) ? raw.data.filter((r: unknown) => r != null && typeof r === 'object') : [];
       const nextCursor = raw?.cursor ?? null;
       setReadings((prev) => [...(Array.isArray(prev) ? prev : []), ...list]);

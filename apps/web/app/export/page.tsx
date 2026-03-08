@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { apiGet, triggerUnauthorized } from '@/lib/api';
+import { apiGet, proxyFetchRaw } from '@/lib/api';
 import { toast } from 'sonner';
 
 type Device = { serial: string; displayName: string | null };
@@ -96,17 +96,11 @@ export default function ExportPage() {
 
     setDownloading(format);
     try {
-      const res = await fetch('/api/proxy', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ path, method: 'GET' }),
-      });
+      const res = await proxyFetchRaw(path, { method: 'GET' });
       const contentType = res.headers.get('content-type') || '';
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        if (res.status === 401) triggerUnauthorized();
-        else toast.error(data?.error?.message ?? 'Ошибка экспорта');
+        toast.error(data?.error?.message ?? 'Ошибка экспорта');
         return;
       }
       if (contentType.includes('text/csv')) {

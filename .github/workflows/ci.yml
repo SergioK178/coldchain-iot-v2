@@ -22,13 +22,13 @@ jobs:
           cache: 'pnpm'
 
       - name: Install
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
-      - name: Typecheck
-        run: pnpm -r run typecheck
-      - name: Typecheck server
-        run: pnpm --filter @sensor/server exec tsc --noEmit
-      - name: Build db
-        run: pnpm --filter @sensor/db run build
-      - name: Build web
-        run: pnpm --filter @sensor/web run build
+      - name: Build shared & db
+        run: pnpm --filter @sensor/shared build && pnpm --filter @sensor/db build
+
+      - name: Build server
+        run: pnpm --filter @sensor/server build
+
+      - name: Typecheck & build web
+        run: pnpm --filter @sensor/web run typecheck && pnpm --filter @sensor/web build

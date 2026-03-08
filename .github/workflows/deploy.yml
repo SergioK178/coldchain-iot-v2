@@ -1,0 +1,28 @@
+name: Deploy
+
+on:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -e
+            cd ${{ secrets.DEPLOY_PATH || '/var/www/coldchain-iot-v2' }}
+            git fetch origin
+            git reset --hard origin/${{ github.ref_name }}
+            docker compose -f deploy/docker-compose.yml --profile https build --no-cache
+            docker compose -f deploy/docker-compose.yml --profile https up -d
+          script_stop: true
