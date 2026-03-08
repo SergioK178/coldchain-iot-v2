@@ -24,7 +24,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   const goLogin = useCallback(() => {
     toast.error('Сессия истекла. Войдите снова.');
-    const target = pathname && pathname !== '/login' ? `/login?next=${encodeURIComponent(pathname)}` : '/login';
+    const currentPath = typeof window !== 'undefined' ? window.location.pathname : pathname;
+    const target = currentPath && currentPath !== '/login' ? `/login?next=${encodeURIComponent(currentPath)}` : '/login';
     router.replace(target);
   }, [pathname, router]);
 
@@ -52,9 +53,11 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       });
   }, [goLogin]);
 
+  // Проверка только при монтировании — при навигации не перепроверяем, чтобы избежать лишних запросов и гонок
   useEffect(() => {
     checkAuth();
-  }, [checkAuth]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- только при первом монтировании
+  }, []);
 
   if (loading) {
     return (
