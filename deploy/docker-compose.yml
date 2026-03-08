@@ -84,6 +84,8 @@ services:
       AUTH_COOKIE_SECURE: "${AUTH_COOKIE_SECURE:-auto}"
       WEBHOOK_ALLOWLIST_HOSTS: "${WEBHOOK_ALLOWLIST_HOSTS:-}"
       MOSQUITTO_RELOAD_URL: "http://mqtt:9080/reload"
+      PUBLIC_API_URL: "${PUBLIC_API_URL:-}"
+      MQTT_PUBLIC_URL: "${MQTT_PUBLIC_URL:-}"
     ports:
       - "${HTTP_PORT:-8080}:8080"
     healthcheck:

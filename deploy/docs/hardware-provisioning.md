@@ -105,13 +105,29 @@ Complete before shipping:
 
 Credentials are generated server-side via the ColdChain API. **No credentials are baked into firmware at the factory.**
 
-### Step-by-step
+### Two activation paths
 
-1. **Operator scans QR** or enters serial in the ColdChain web UI → claim device.
-2. **System generates** MQTT username and password via `POST /api/v1/devices/provision`.
-3. **Operator flashes** credentials into device over USB/serial (or via BLE config tool).
-4. **Device connects** to MQTT broker and starts publishing telemetry.
-5. **Operator verifies** online status in the UI.
+| Path | Use case | Flow |
+|------|----------|------|
+| **A — Wi‑Fi AP + activation token** (recommended) | Productive onboarding, no USB | Operator creates device in UI → gets activation token → connects to sensor's Wi‑Fi AP → enters token in portal → sensor claims on server → receives MQTT credentials |
+| **B — Manual MQTT** (fallback) | USB/BLE, recovery, batch | Operator creates device in UI → gets MQTT credentials → flashes into device manually |
+
+### Path A — Wi‑Fi AP + activation token (recommended)
+
+1. **Operator** scans QR or enters serial in ColdChain UI `/onboard` → selects location/zone → clicks "Register".
+2. **System** creates device and returns **activation token** (24h TTL).
+3. **Operator** connects phone/laptop to sensor's Wi‑Fi AP (e.g. `ColdChain-SENS-TH-00001`).
+4. **Operator** opens `http://192.168.4.1` in browser → enters object's Wi‑Fi SSID, password, and activation token.
+5. **Sensor** connects to object Wi‑Fi → calls `POST /api/v1/devices/claim` with serial + token.
+6. **Server** validates token, rotates credentials, returns MQTT config to sensor.
+7. **Sensor** saves credentials, connects to MQTT, publishes telemetry.
+8. **Operator** verifies online status in UI.
+
+### Path B — Manual MQTT (fallback)
+
+1. **Operator** creates device in UI → gets MQTT credentials (in "Manual mode" section).
+2. **Operator** flashes credentials into device over USB/serial or BLE.
+3. **Device** connects to MQTT and publishes telemetry.
 
 ### Provisioning API call
 
@@ -134,6 +150,9 @@ Response:
   "data": {
     "serial": "SENS-TH-00001",
     "deviceType": "TH",
+    "activationToken": "<base64url-token>",
+    "activationTokenExpiresAt": "2026-03-09T12:00:00.000Z",
+    "activationTokenExpiresIn": 86400,
     "mqtt": {
       "username": "dev_sens_th_00001",
       "password": "<generated>",
@@ -144,7 +163,40 @@ Response:
 }
 ```
 
-**The plaintext password is returned only once.** Store it securely before flashing.
+**Activation token** — use for Wi‑Fi AP claim flow. Valid 24 hours. One-time use.  
+**MQTT password** — for manual mode only. Returned once. If sensor claims via token, these credentials become invalid.
+
+### Claim API (sensor calls, no auth)
+
+```bash
+curl -X POST https://<instance>/api/v1/devices/claim \
+  -H "Content-Type: application/json" \
+  -d '{
+    "serial": "SENS-TH-00001",
+    "activationToken": "<token-from-provision>",
+    "firmwareVersion": "0.1.0",
+    "powerSource": "battery"
+  }'
+```
+
+Response:
+```json
+{
+  "ok": true,
+  "data": {
+    "serial": "SENS-TH-00001",
+    "mqtt": {
+      "url": "mqtt://coldchain-service.site:1883",
+      "username": "dev_sens_th_00001",
+      "password": "<new-rotated-password>",
+      "topic": "d/SENS-TH-00001/t",
+      "statusTopic": "d/SENS-TH-00001/s"
+    }
+  }
+}
+```
+
+Server rotates credentials on claim. Sensor must use the returned password.
 
 ---
 
@@ -188,7 +240,33 @@ SENS-TH-00002,dev_sens_th_00002,<password>,ok,
 
 ---
 
-## Flashing Credentials into Device
+## Wi‑Fi AP Portal (Path A)
+
+For sensors with Wi‑Fi AP mode, the firmware must implement a captive portal or config page.
+
+### Bootstrap data (user enters in portal)
+
+| Field | Description |
+|-------|-------------|
+| Wi‑Fi SSID | Object's network name |
+| Wi‑Fi password | Object's network password |
+| Activation token | From provision response (step 3 in UI) |
+
+### Firmware flow
+
+1. Device boots in SETUP MODE → starts AP (e.g. `ColdChain-SENS-TH-00001`).
+2. User connects to AP, opens `http://192.168.4.1`.
+3. Portal asks for: Wi‑Fi SSID, password, activation token.
+4. Device connects to object Wi‑Fi.
+5. Device calls `POST https://<server>/api/v1/devices/claim` with `{ serial, activationToken }`.
+6. Server returns `mqtt.url`, `mqtt.username`, `mqtt.password`, topics.
+7. Device saves runtime config, switches to normal mode, connects to MQTT.
+
+**Server URL** — device needs the API base URL. Options: (a) from provisioning JSON bundle, (b) configurable in portal, (c) mDNS/discovery.
+
+---
+
+## Flashing Credentials into Device (Path B — manual)
 
 After provisioning, credentials must be written to the device's non-volatile storage.
 

@@ -43,7 +43,8 @@ MOSQUITTO_RELOAD_URL=http://mqtt:9080/reload
 | `HTTP_PORT` | 8080 | Порт API/backend |
 | `WEB_PORT` | 3000 | Порт веб-интерфейса |
 | `MQTT_PORT` | 1883 | Порт MQTT брокера |
-| `PUBLIC_API_URL` | http://localhost:8080 | Публичный URL API (виден браузеру клиента) |
+| `PUBLIC_API_URL` | http://localhost:8080 | Публичный URL API (виден браузеру). Для claim flow — датчики получают mqtt_url от этого хоста. |
+| `MQTT_PUBLIC_URL` | — | Публичный URL MQTT (напр. mqtt://coldchain-service.site:1883). Если пусто — выводится из PUBLIC_API_URL. |
 | `DEVICE_OFFLINE_TIMEOUT_SEC` | 300 | Таймаут офлайн-статуса |
 | `WEBHOOK_ALLOWLIST_HOSTS` | — | Comma-separated список разрешённых хостов для webhooks |
 | `TELEGRAM_BOT_TOKEN` | — | Токен бота для Telegram-уведомлений о тревогах (опционально) |
@@ -208,13 +209,17 @@ pnpm --filter @sensor/provision-cli provision -- \
   --output-file credentials.csv
 ```
 
-## Прошивка credentials в датчик
+## Активация датчика
 
-Полученные `username` и `password` необходимо прошить в датчик. Подробности — в [руководстве по hardware provisioning](./hardware-provisioning.md).
+Два способа:
 
-Параметры подключения:
-- MQTT Host: IP-адрес сервера
-- MQTT Port: 1883 (или значение `MQTT_PORT`)
+**Способ A — Wi‑Fi AP (рекомендуется):** после регистрации в UI вы получите **код активации**. Подключитесь к Wi‑Fi датчика (ColdChain-SENS-…), откройте http://192.168.4.1, введите Wi‑Fi объекта и код. Датчик сам получит MQTT credentials с сервера.
+
+**Способ B — ручная настройка:** в UI откройте раздел «Ручной режим (MQTT credentials)» и скопируйте username/password. Прошейте их в датчик через USB/BLE. Подробности — в [hardware-provisioning.md](./hardware-provisioning.md).
+
+Параметры подключения (для ручного способа):
+- MQTT Host: IP или домен сервера
+- MQTT Port: 1883 (или `MQTT_PORT`)
 - Username: из ответа provision
 - Password: из ответа provision
 
@@ -235,8 +240,11 @@ coldchain.example.com  A  <IP_VPS>
 ```env
 DOMAIN=coldchain.example.com
 PUBLIC_API_URL=https://coldchain.example.com
+MQTT_PUBLIC_URL=mqtt://coldchain.example.com:1883
 AUTH_COOKIE_SECURE=true
 ```
+
+`MQTT_PUBLIC_URL` — для claim flow: датчики получают этот URL при активации. Если не задан — выводится из `PUBLIC_API_URL`.
 
 ### 3. Порты
 
