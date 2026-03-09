@@ -13,15 +13,34 @@ function LoginForm() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [healthOk, setHealthOk] = useState<boolean | null>(null);
+  const [healthChecking, setHealthChecking] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  useEffect(() => {
+  const checkHealth = () =>
     fetch('/api/health', { cache: 'no-store' })
       .then((r) => r.json())
-      .then((d) => setHealthOk(d?.ok === true))
-      .catch(() => setHealthOk(false));
+      .then((d) => {
+        setHealthOk(d?.ok === true);
+        return d?.ok === true;
+      })
+      .catch(() => {
+        setHealthOk(false);
+        return false;
+      })
+      .finally(() => setHealthChecking(false));
+
+  useEffect(() => {
+    setHealthChecking(true);
+    checkHealth().then((ok) => {
+      if (!ok) setTimeout(() => { setHealthChecking(true); checkHealth(); }, 3000);
+    });
   }, []);
+
+  const handleRetryHealth = () => {
+    setHealthChecking(true);
+    checkHealth();
+  };
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -123,18 +142,32 @@ function LoginForm() {
 
             {healthOk !== null && (
               <div
-                className={`flex items-center justify-center gap-1.5 mt-7 py-2.5 px-4 rounded-xl text-xs font-semibold ${
+                className={`flex flex-col items-center gap-2 mt-7 py-2.5 px-4 rounded-xl text-xs font-semibold ${
                   healthOk
                     ? 'bg-[hsl(var(--frost-100))] text-muted-foreground'
                     : 'bg-destructive/10 text-destructive'
                 }`}
               >
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    healthOk ? 'bg-green-500 animate-pulse' : 'bg-destructive'
-                  }`}
-                />
-                {healthOk ? 'Система работает в штатном режиме' : 'Сервер недоступен'}
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                      healthOk ? 'bg-green-500 animate-pulse' : 'bg-destructive'
+                    }`}
+                  />
+                  {healthOk ? 'Система работает в штатном режиме' : 'Сервер недоступен'}
+                </div>
+                {!healthOk && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs text-destructive hover:text-destructive"
+                    onClick={handleRetryHealth}
+                    disabled={healthChecking}
+                  >
+                    {healthChecking ? 'Проверка...' : 'Проверить снова'}
+                  </Button>
+                )}
               </div>
             )}
           </CardContent>
