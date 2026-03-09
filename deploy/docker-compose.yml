@@ -130,9 +130,7 @@ services:
       - web
     environment:
       DOMAIN: "${DOMAIN:-localhost}"
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
+    # Не переопределять DNS — иначе Caddy не резолвит имена контейнеров (web, server)
     ports:
       - "80:80"
       - "443:443"
