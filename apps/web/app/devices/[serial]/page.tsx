@@ -16,6 +16,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
+import { StatusIndicator, getDeviceStatus } from '@/components/StatusIndicator';
+import { Collapsible } from '@/components/Collapsible';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -33,11 +35,14 @@ import { toast } from 'sonner';
 type Device = {
   serial: string;
   displayName: string | null;
+  zoneId?: string | null;
   zoneName: string | null;
+  locationId?: string | null;
   locationName: string | null;
   lastTemperatureC: number | null;
   lastHumidityPct: number | null;
   lastBatteryPct: number | null;
+  lastSeenAt?: string | null;
   connectivityStatus: string;
   alertStatus: string;
   calibrationOffsetC?: number;
@@ -266,55 +271,85 @@ export default function DeviceDetailPage() {
       humidity: typeof r?.humidityPct === 'number' ? r.humidityPct : 0,
     }));
 
+  const status = getDeviceStatus(
+    device.connectivityStatus,
+    device.alertStatus,
+    device.lastTemperatureC != null || device.lastSeenAt != null
+  );
+  const tempColor =
+    status === 'alert' ? 'text-red-600 dark:text-red-400' :
+    status === 'ok' ? 'text-green-700 dark:text-green-400' :
+    'text-muted-foreground';
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="min-w-0 flex-1">
-          <Link href="/devices"><Button variant="ghost" size="sm">← Устройства</Button></Link>
-          <h1 className="text-2xl sm:text-3xl font-semibold mt-2 truncate">{device.displayName || device.serial}</h1>
-          <p className="text-muted-foreground text-sm">Serial: {device.serial}</p>
-        </div>
-        <div className="flex gap-2">
-          <Badge variant={device.connectivityStatus === 'online' ? 'success' : 'secondary'}>
-            {device.connectivityStatus === 'online' ? 'Онлайн' : 'Офлайн'}
-          </Badge>
-          {device.alertStatus === 'alert' && <Badge variant="destructive">Тревога</Badge>}
-        </div>
+      {/* Breadcrumbs */}
+      <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
+        <Link href="/devices" className="hover:text-foreground">Устройства</Link>
+        {device.locationName && (
+          <>
+            <span>/</span>
+            {device.locationId ? (
+              <Link href={`/locations/${device.locationId}`} className="hover:text-foreground">{device.locationName}</Link>
+            ) : (
+              <span>{device.locationName}</span>
+            )}
+          </>
+        )}
+        {device.zoneName && (
+          <>
+            <span>/</span>
+            <span>{device.zoneName}</span>
+          </>
+        )}
+        <span>/</span>
+        <span className="text-foreground font-medium">{device.displayName || device.serial}</span>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Температура</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{device.lastTemperatureC != null ? `${device.lastTemperatureC} °C` : '—'}</div>
-            <p className="text-xs text-muted-foreground">Локация: {device.locationName ?? '—'}, Зона: {device.zoneName ?? '—'}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Влажность</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{device.lastHumidityPct != null ? `${device.lastHumidityPct} %` : '—'}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Батарея</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{device.lastBatteryPct != null ? `${device.lastBatteryPct} %` : '—'}</div>
-            <p className="text-xs text-muted-foreground">
-              Смещение калибровки: {device.calibrationOffsetC ?? 0} °C
-              {calibrations.length > 0 && calibrations[0] && (
-                <span> (последняя: {calibrations[0]?.calibratedAt && typeof calibrations[0].calibratedAt === 'string' ? calibrations[0].calibratedAt.slice(0, 10) : '—'})</span>
-              )}
-            </p>
-          </CardContent>
-        </Card>
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-2xl sm:text-3xl font-semibold truncate">{device.displayName || device.serial}</h1>
+          <p className="text-muted-foreground text-sm">Serial: {device.serial}</p>
+        </div>
+        <StatusIndicator
+          status={status}
+          label={status === 'ok' ? 'Онлайн' : status === 'alert' ? 'Тревога' : 'Офлайн'}
+          size="md"
+        />
       </div>
+
+      {/* Hero block: current readings — temperature dominant */}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-3">
+            <div>
+              <p className="text-sm font-medium text-muted-foreground mb-1">Температура</p>
+              <div className={`text-5xl sm:text-6xl font-bold tabular-nums ${tempColor}`}>
+                {device.lastTemperatureC != null ? `${device.lastTemperatureC} °C` : '—'}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">Локация: {device.locationName ?? '—'}, Зона: {device.zoneName ?? '—'}</p>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground mb-1">Влажность</p>
+              <div className="text-3xl sm:text-4xl font-bold tabular-nums">
+                {device.lastHumidityPct != null ? `${device.lastHumidityPct} %` : '—'}
+              </div>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-muted-foreground mb-1">Батарея</p>
+              <div className="text-3xl sm:text-4xl font-bold tabular-nums">
+                {device.lastBatteryPct != null ? `${device.lastBatteryPct} %` : '—'}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Смещение калибровки: {device.calibrationOffsetC ?? 0} °C
+                {calibrations.length > 0 && calibrations[0] && (
+                  <span> (последняя: {calibrations[0]?.calibratedAt && typeof calibrations[0].calibratedAt === 'string' ? calibrations[0].calibratedAt.slice(0, 10) : '—'})</span>
+                )}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
@@ -347,12 +382,9 @@ export default function DeviceDetailPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Управление устройством</CardTitle>
-          <CardDescription>Перепривязка к локации/зоне, отвязка от зоны или деактивация устройства.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <Collapsible title="Управление устройством" defaultOpen={false}>
+        <p className="text-sm text-muted-foreground mb-4">Перепривязка к локации/зоне, отвязка от зоны или деактивация устройства.</p>
+        <div className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="grid gap-2">
               <Label htmlFor="manage-location">Локация</Label>
@@ -483,17 +515,14 @@ export default function DeviceDetailPage() {
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </Collapsible>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Калибровки</CardTitle>
-          <CardDescription>
-            Текущее смещение: {device.calibrationOffsetC ?? 0} °C. Оператор/админ может добавить запись калибровки.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+      <Collapsible title="Калибровки" defaultOpen={false}>
+        <p className="text-sm text-muted-foreground mb-4">
+          Текущее смещение: {device.calibrationOffsetC ?? 0} °C. Оператор/админ может добавить запись калибровки.
+        </p>
+        <div className="space-y-4">
           <form
             onSubmit={async (e) => {
               e.preventDefault();
@@ -571,8 +600,8 @@ export default function DeviceDetailPage() {
               </Table>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </Collapsible>
 
       <Card>
         <CardHeader>

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Plus, Pencil, Trash2, Send } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -29,14 +29,19 @@ import { Badge } from '@/components/ui/badge';
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/lib/api';
 import { toast } from 'sonner';
 import { useI18n } from '@/components/I18nProvider';
+import { useAuth } from '@/components/AuthGuard';
 
 type User = { id: string; email: string; name: string | null; role: string };
 type Webhook = { id: string; url: string; events: string[]; isActive: boolean; createdAt?: string };
 
 export default function SettingsPage() {
   const { t } = useI18n();
+  const { user } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [webhooks, setWebhooks] = useState<Webhook[]>([]);
+  const [siteName, setSiteName] = useState('');
+  const [siteNameForm, setSiteNameForm] = useState('');
+  const [siteNameSubmitting, setSiteNameSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -58,12 +63,16 @@ export default function SettingsPage() {
     setLoading(true);
     setError('');
     try {
-      const [uRes, wRes] = await Promise.all([
+      const [uRes, wRes, siteRes] = await Promise.all([
         apiGet<User[]>('/api/v1/users'),
         apiGet<Webhook[]>('/api/v1/webhooks'),
+        apiGet<{ name: string }>('/api/v1/settings/site-name').catch(() => ({ data: { name: '' } })),
       ]);
       setUsers(uRes.data ?? []);
       setWebhooks(wRes.data ?? []);
+      const name = siteRes?.data?.name ?? '';
+      setSiteName(name);
+      setSiteNameForm(name);
     } catch (e) {
       setError(e instanceof Error ? e.message : t('settings_admin_only'));
     } finally {
@@ -184,9 +193,50 @@ export default function SettingsPage() {
     );
   }
 
+  const handleSaveSiteName = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!siteNameForm.trim()) return;
+    setSiteNameSubmitting(true);
+    try {
+      await apiPatch('/api/v1/settings/site-name', { name: siteNameForm.trim() });
+      setSiteName(siteNameForm.trim());
+      toast.success('Название сохранено');
+      window.dispatchEvent(new Event('site-name-updated'));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Ошибка');
+    } finally {
+      setSiteNameSubmitting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <h1 className="text-3xl font-semibold">{t('settings_title')}</h1>
+
+      {user?.role === 'admin' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Название организации</CardTitle>
+            <CardDescription>Отображается в шапке и боковой панели</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSaveSiteName} className="flex gap-2 flex-wrap items-end">
+              <div className="flex-1 min-w-[200px]">
+                <Label htmlFor="site-name">Название</Label>
+                <Input
+                  id="site-name"
+                  value={siteNameForm}
+                  onChange={(e) => setSiteNameForm(e.target.value)}
+                  placeholder="Coldchain IoT"
+                />
+              </div>
+              <Button type="submit" disabled={siteNameSubmitting || siteNameForm.trim() === siteName}>
+                {siteNameSubmitting ? 'Сохранение...' : 'Сохранить'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      )}
 
       <Tabs defaultValue="users" className="w-full">
         <TabsList>

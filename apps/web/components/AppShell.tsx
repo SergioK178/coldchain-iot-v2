@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -13,12 +14,15 @@ import {
   User,
   FileDown,
   Languages,
+  Menu,
+  X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useAuth } from './AuthGuard';
 import { useI18n } from './I18nProvider';
+import { apiGet } from '@/lib/api';
 
 const navKeys = [
   { href: '/', key: 'nav_dashboard', icon: LayoutDashboard },
@@ -34,8 +38,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user } = useAuth();
   const { t, locale, setLocale } = useI18n();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [siteName, setSiteName] = useState<string | null>(null);
+
+  useEffect(() => {
+    const load = () => {
+      apiGet<{ name: string }>('/api/v1/settings/site-name')
+        .then((r) => r?.data?.name && setSiteName(r.data.name))
+        .catch(() => {});
+    };
+    load();
+    window.addEventListener('site-name-updated', load);
+    return () => window.removeEventListener('site-name-updated', load);
+  }, []);
 
   const roleLabel = user?.role ? t(`role_${user.role}`) || user.role : '';
+  const brandName = siteName ?? 'Coldchain IoT';
 
   const doLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
@@ -46,29 +64,47 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setLocale(locale === 'ru' ? 'en' : 'ru');
   };
 
+  const closeSidebar = () => setSidebarOpen(false);
+
   return (
     <div className="min-h-screen flex flex-col md:flex-row">
-      <aside className="w-full md:w-56 border-b md:border-b-0 md:border-r bg-muted/30 p-4 flex flex-col">
+      {/* Mobile header */}
+      <header className="md:hidden flex items-center justify-between gap-2 px-4 py-3 border-b bg-background">
+        <Button variant="ghost" size="icon" onClick={() => setSidebarOpen((o) => !o)} aria-label="Меню">
+          {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+        </Button>
+        <span className="font-semibold truncate flex-1 min-w-0 text-center">{brandName}</span>
+        <div className="flex items-center gap-1 shrink-0">
+          <Button variant="ghost" size="sm" onClick={toggleLocale} title={locale === 'ru' ? 'English' : 'Русский'}>
+            <span className="text-xs font-medium">{locale === 'ru' ? 'EN' : 'RU'}</span>
+          </Button>
+          <Button variant="ghost" size="icon" onClick={doLogout} title={t('nav_logout')}>
+            <LogOut className="h-4 w-4" />
+          </Button>
+        </div>
+      </header>
+
+      {/* Sidebar — overlay on mobile when open */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          onClick={closeSidebar}
+          aria-hidden
+        />
+      )}
+      <aside
+        className={cn(
+          'w-56 border-r bg-muted/30 p-4 flex flex-col',
+          'fixed md:relative inset-y-0 left-0 z-50 md:z-auto',
+          'transform transition-transform duration-200 ease-out',
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        )}
+      >
         <div className="flex items-center justify-between gap-2 md:block">
-          <div className="font-semibold text-lg whitespace-nowrap">Coldchain IoT</div>
+          <div className="font-semibold text-lg whitespace-nowrap">{brandName}</div>
           <div className="flex items-center gap-1 md:hidden">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="shrink-0 text-muted-foreground"
-              onClick={toggleLocale}
-              title={locale === 'ru' ? 'English' : 'Русский'}
-            >
-              <span className="text-xs font-medium">{locale === 'ru' ? 'EN' : 'RU'}</span>
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="shrink-0 text-muted-foreground"
-              onClick={doLogout}
-              title={t('nav_logout')}
-            >
-              <LogOut className="h-4 w-4" />
+            <Button variant="ghost" size="icon" onClick={closeSidebar} aria-label="Закрыть">
+              <X className="h-4 w-4" />
             </Button>
           </div>
         </div>
@@ -83,12 +119,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         )}
-        <nav className="flex flex-wrap md:flex-col gap-1 flex-1 md:flex-initial">
+        <nav className="flex flex-col gap-1 flex-1 md:flex-initial">
           {navKeys.map((item) => {
             const Icon = item.icon;
             const active = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
             return (
-              <Link key={item.href} href={item.href}>
+              <Link key={item.href} href={item.href} onClick={closeSidebar}>
                 <Button
                   variant={active ? 'secondary' : 'ghost'}
                   size="sm"

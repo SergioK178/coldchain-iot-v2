@@ -14,8 +14,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { StatusIndicator, getDeviceStatus } from '@/components/StatusIndicator';
 import { Input } from '@/components/ui/input';
 import { apiGet } from '@/lib/api';
 import { useI18n } from '@/components/I18nProvider';
@@ -27,6 +27,9 @@ type DeviceRow = {
   locationName: string | null;
   connectivityStatus: string;
   alertStatus: string;
+  lastTemperatureC: number | null;
+  lastHumidityPct: number | null;
+  lastSeenAt: string | null;
 };
 
 export default function DevicesPage() {
@@ -174,15 +177,15 @@ export default function DevicesPage() {
             <p className="text-muted-foreground py-8 text-center">{t('devices_no_devices')}</p>
           ) : (
             <div className="max-h-[60vh] overflow-auto overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-              <Table className="min-w-[600px] sm:min-w-0">
+              <Table className="min-w-[720px] sm:min-w-0">
                 <TableHeader>
                   <TableRow>
                     <TableHead>{t('devices_serial')}</TableHead>
                     <TableHead>{t('devices_name')}</TableHead>
+                    <TableHead>Последнее значение</TableHead>
                     <TableHead>{t('devices_zone')}</TableHead>
                     <TableHead>{t('devices_location_col')}</TableHead>
                     <TableHead>{t('devices_status_col')}</TableHead>
-                    <TableHead>{t('devices_alert_col')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -193,34 +196,39 @@ export default function DevicesPage() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filtered.map((d) => (
-                      <TableRow
-                        key={d.serial}
-                        className="cursor-pointer hover:bg-muted/50"
-                        onClick={() => router.push(`/devices/${d.serial}`)}
-                      >
-                        <TableCell className="font-medium">
-                          <Link href={`/devices/${d.serial}`} className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
-                            {d.serial}
-                          </Link>
-                        </TableCell>
-                        <TableCell>{d.displayName ?? '—'}</TableCell>
-                        <TableCell className="text-muted-foreground">{d.zoneName ?? '—'}</TableCell>
-                        <TableCell className="text-muted-foreground">{d.locationName ?? '—'}</TableCell>
-                        <TableCell>
-                          <Badge variant={d.connectivityStatus === 'online' ? 'success' : 'secondary'}>
-                            {d.connectivityStatus === 'online' ? t('devices_online') : t('devices_offline')}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {d.alertStatus === 'alert' ? (
-                            <Badge variant="destructive">{t('devices_alert_badge')}</Badge>
-                          ) : (
-                            <span className="text-muted-foreground text-sm">—</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))
+                    filtered.map((d) => {
+                      const status = getDeviceStatus(
+                        d.connectivityStatus,
+                        d.alertStatus,
+                        d.lastTemperatureC != null || d.lastSeenAt != null
+                      );
+                      return (
+                        <TableRow
+                          key={d.serial}
+                          className="cursor-pointer hover:bg-muted/50"
+                          onClick={() => router.push(`/devices/${d.serial}`)}
+                        >
+                          <TableCell className="font-medium">
+                            <Link href={`/devices/${d.serial}`} className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
+                              {d.serial}
+                            </Link>
+                          </TableCell>
+                          <TableCell>{d.displayName ?? '—'}</TableCell>
+                          <TableCell className="font-semibold tabular-nums">
+                            {d.lastTemperatureC != null ? `${d.lastTemperatureC} °C` : '—'}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">{d.zoneName ?? '—'}</TableCell>
+                          <TableCell className="text-muted-foreground">{d.locationName ?? '—'}</TableCell>
+                          <TableCell>
+                            <StatusIndicator
+                              status={status}
+                              label={status === 'ok' ? t('devices_online') : status === 'alert' ? t('devices_alert_badge') : t('devices_offline')}
+                              size="sm"
+                            />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
                   )}
                 </TableBody>
               </Table>

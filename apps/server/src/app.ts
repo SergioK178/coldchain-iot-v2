@@ -24,6 +24,7 @@ import { alertRulesRoutes } from './routes/alert-rules.js';
 import { alertEventsRoutes } from './routes/alert-events.js';
 import { webhookRoutes } from './routes/webhooks.js';
 import { exportRoutes } from './routes/export.js';
+import { settingsRoutes } from './routes/settings.js';
 
 // Extend Fastify with custom properties
 declare module 'fastify' {
@@ -116,6 +117,7 @@ export async function buildApp(env: Env) {
   await app.register(alertEventsRoutes);
   await app.register(webhookRoutes);
   await app.register(exportRoutes);
+  await app.register(settingsRoutes);
 
   const stopRetryLoop = webhookService.startRetryLoop(app.log);
   app.addHook('onClose', () => stopRetryLoop());
