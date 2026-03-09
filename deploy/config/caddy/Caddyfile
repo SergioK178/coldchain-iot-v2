@@ -4,6 +4,12 @@ www.{$DOMAIN:localhost} {
 }
 
 {$DOMAIN:localhost} {
-    # Всё идёт в Next.js: страницы, /api/auth/*, /api/proxy. Next.js проксирует в server внутри.
-    reverse_proxy web:3000
+    # /api/v1/* — напрямую в backend (health, ready и др.)
+    handle /api/v1/* {
+        reverse_proxy server:8080
+    }
+    # Остальное — Next.js (страницы, /api/auth/*, /api/proxy)
+    handle {
+        reverse_proxy web:3000
+    }
 }

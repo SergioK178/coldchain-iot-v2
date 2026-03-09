@@ -18,7 +18,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
 
   const checkHealth = () =>
-    fetch('/api/health', { cache: 'no-store' })
+    fetch('/api/v1/health', { cache: 'no-store' })
       .then((r) => r.json())
       .then((d) => {
         setHealthOk(d?.ok === true);
