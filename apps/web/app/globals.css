@@ -2,33 +2,60 @@
 @tailwind components;
 @tailwind utilities;
 
+/**
+ * Палитра Снежок (кодовое название Coldchain IoT)
+ * frost — холодные фоны, snow — акцентные синие
+ * Документация: docs/DESIGN-SYSTEM.md
+ */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Frost — фоны и нейтральные */
+    --frost-50: 210 55% 97%;
+    --frost-100: 208 55% 94%;
+    --frost-200: 205 55% 88%;
+    /* Snow — акценты */
+    --snow-500: 211 86% 59%;
+    --snow-600: 211 67% 50%;
+
+    --background: 210 55% 97%;
+    --foreground: 212 40% 17%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 212 40% 17%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --popover-foreground: 212 40% 17%;
+    --primary: 211 86% 59%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 208 55% 94%;
+    --secondary-foreground: 212 40% 17%;
+    --muted: 208 55% 94%;
+    --muted-foreground: 212 20% 61%;
+    --accent: 208 55% 94%;
+    --accent-foreground: 212 40% 17%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 205 55% 88%;
+    --input: 205 55% 88%;
+    --ring: 211 86% 59%;
     --radius: 0.5rem;
-    --success: 142.1 76.2% 36.3%;
+    /* Статусы — сохраняем контраст для Ок/Тревога/Офлайн */
+    --success: 142 76% 36%;
     --warning: 38 92% 50%;
   }
+}
+
+/* Анимация появления (аналог animate-in) */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-up {
+  animation: fade-up 0.5s ease-out forwards;
 }
 
 @layer base {

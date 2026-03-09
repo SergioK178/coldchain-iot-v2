@@ -51,6 +51,7 @@
 
 | Документ | Описание |
 |----------|----------|
+| [DESIGN-SYSTEM.md](DESIGN-SYSTEM.md) | Палитра Снежок, шрифт Nunito, компоненты |
 | [P2-hardening/HARDENING-SPEC.md](P2-hardening/HARDENING-SPEC.md) | Архитектурные решения P2 |
 | [P2-hardening/HARDENING-SUMMARY.md](P2-hardening/HARDENING-SUMMARY.md) | Итоги hardening |
 | [P2/UI-SPEC.md](P2/UI-SPEC.md) | UI stack и baseline |

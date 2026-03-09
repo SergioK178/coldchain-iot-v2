@@ -68,9 +68,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row">
-      {/* Mobile header */}
-      <header className="md:hidden flex items-center justify-between gap-2 px-4 py-3 border-b bg-background">
-        <Button variant="ghost" size="icon" onClick={() => setSidebarOpen((o) => !o)} aria-label="Меню">
+      {/* Mobile header — всегда поверх (z-[60]), кнопка меню/закрытия всегда доступна */}
+      <header className="md:hidden flex items-center justify-between gap-2 px-4 py-3 h-14 border-b bg-background shrink-0 z-[60]">
+        <Button variant="ghost" size="icon" onClick={() => setSidebarOpen((o) => !o)} aria-label={sidebarOpen ? 'Закрыть меню' : 'Открыть меню'}>
           {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </Button>
         <span className="font-semibold truncate flex-1 min-w-0 text-center">{brandName}</span>
@@ -84,29 +84,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      {/* Sidebar — overlay on mobile when open */}
+      {/* Overlay — под шапкой, чтобы шапка оставалась видимой */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          className="fixed inset-x-0 bottom-0 top-14 z-40 bg-black/50 md:hidden"
           onClick={closeSidebar}
           aria-hidden
         />
       )}
       <aside
         className={cn(
-          'w-56 border-r bg-muted/30 p-4 flex flex-col',
-          'fixed md:relative inset-y-0 left-0 z-50 md:z-auto',
+          'w-56 border-r p-4 flex flex-col',
+          'bg-background md:bg-muted/30',
+          'fixed md:relative top-14 bottom-0 left-0 md:top-auto md:bottom-auto md:left-auto z-50 md:z-auto',
           'transform transition-transform duration-200 ease-out',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         )}
       >
         <div className="flex items-center justify-between gap-2 md:block">
           <div className="font-semibold text-lg whitespace-nowrap">{brandName}</div>
-          <div className="flex items-center gap-1 md:hidden">
-            <Button variant="ghost" size="icon" onClick={closeSidebar} aria-label="Закрыть">
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
         </div>
         {user && (
           <div className="flex items-center gap-2 mt-2 py-2 border-b md:border-b-0 border-border/50 md:mb-2">

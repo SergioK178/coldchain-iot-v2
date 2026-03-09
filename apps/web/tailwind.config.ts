@@ -14,7 +14,7 @@ const config: Config = {
     },
     extend: {
       fontFamily: {
-        sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
+        sans: ['var(--font-nunito)', 'system-ui', 'sans-serif'],
       },
       fontSize: {
         xs: ['12px', '1.5'],
@@ -26,6 +26,15 @@ const config: Config = {
         '3xl': ['28px', '1.2'],
       },
       colors: {
+        frost: {
+          50: 'hsl(var(--frost-50))',
+          100: 'hsl(var(--frost-100))',
+          200: 'hsl(var(--frost-200))',
+        },
+        snow: {
+          500: 'hsl(var(--snow-500))',
+          600: 'hsl(var(--snow-600))',
+        },
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
