@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +14,6 @@ function LoginForm() {
   const [error, setError] = useState('');
   const [healthOk, setHealthOk] = useState<boolean | null>(null);
   const [healthChecking, setHealthChecking] = useState(false);
-  const router = useRouter();
   const searchParams = useSearchParams();
 
   const checkHealth = () =>
@@ -67,8 +66,8 @@ function LoginForm() {
       }
       const next = searchParams.get('next');
       const target = next && next.startsWith('/') ? next : '/';
-      router.push(target);
-      router.refresh();
+      // Full reload гарантирует, что cookie применён до загрузки защищённых страниц
+      window.location.href = target;
     } catch {
       setError('Не удалось подключиться к API. Проверьте сеть и контейнеры.');
     }
