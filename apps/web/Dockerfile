@@ -20,7 +20,9 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
 # Только исходники web (shared/db не нужны — web standalone)
 COPY apps/web/ apps/web/
 
-RUN pnpm --filter @sensor/web run build
+# Next.js build cache для ускорения пересборок (DOCKER_BUILDKIT=1)
+RUN --mount=type=cache,target=/app/apps/web/.next/cache \
+    pnpm --filter @sensor/web run build
 
 # --- Runner ---
 FROM node:22-alpine AS runner
