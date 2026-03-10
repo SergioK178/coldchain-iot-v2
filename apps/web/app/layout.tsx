@@ -12,7 +12,7 @@ const nunito = Nunito({
 });
 
 export const metadata: Metadata = {
-  title: 'Coldchain IoT',
+  title: 'Снежок колдчейн',
   description: 'Sensor platform',
 };
 
