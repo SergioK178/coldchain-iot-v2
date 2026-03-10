@@ -8,7 +8,12 @@ www.{$DOMAIN:localhost} {
     handle /api/v1/* {
         reverse_proxy server:8080
     }
-    # Остальное — Next.js (страницы, /api/auth/*, /api/proxy)
+    # /api/auth/* — напрямую в backend (cookie от браузера к server без прокси)
+    handle_path /api/auth/* {
+        rewrite * /api/v1/auth{path}
+        reverse_proxy server:8080
+    }
+    # Остальное — Next.js (страницы, /api/proxy)
     handle {
         reverse_proxy web:3000
     }
