@@ -282,7 +282,7 @@ curl https://coldchain.example.com/api/v1/health
 http://<адрес_сервера>:<WEB_PORT>
 ```
 
-Если `WEB_PORT` отличается от `HTTP_PORT` или используется HTTPS (Caddy), задайте `PUBLIC_API_URL` в `.env`. Это нужно для корректной работы refresh-cookie (явный Domain при проксировании):
+Если `WEB_PORT` отличается от `HTTP_PORT` (например, reverse proxy), задайте `PUBLIC_API_URL` в `.env`:
 
 ```
 PUBLIC_API_URL=https://api.yourcompany.com

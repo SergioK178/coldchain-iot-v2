@@ -6,25 +6,11 @@ import { InMemoryRateLimiter } from '../lib/auth-rate-limit.js';
 
 const LoginSchema = z.object({ email: z.string().email(), password: z.string().min(1) });
 
-/** Извлекает домен из PUBLIC_API_URL (https://coldchain-service.site → coldchain-service.site) */
-function getCookieDomain(publicApiUrl: string): string | undefined {
-  if (!publicApiUrl.trim()) return undefined;
-  try {
-    const u = new URL(publicApiUrl);
-    const host = u.hostname;
-    if (host && host !== 'localhost' && !/^\d+\.\d+\.\d+\.\d+$/.test(host)) return host;
-  } catch {
-    /* ignore */
-  }
-  return undefined;
-}
-
 function setRefreshCookie(
   reply: import('fastify').FastifyReply,
   value: string,
   maxAge: number,
   secure: boolean,
-  cookieDomain?: string,
 ) {
   const parts = [
     `refreshToken=${encodeURIComponent(value)}`,
@@ -33,16 +19,11 @@ function setRefreshCookie(
     'Path=/',
     `Max-Age=${maxAge}`,
   ];
-  if (cookieDomain) parts.push(`Domain=${cookieDomain}`);
   if (secure) parts.push('Secure');
   reply.header('Set-Cookie', parts.join('; '));
 }
 
-function clearRefreshCookie(
-  reply: import('fastify').FastifyReply,
-  secure: boolean,
-  cookieDomain?: string,
-) {
+function clearRefreshCookie(reply: import('fastify').FastifyReply, secure: boolean) {
   const parts = [
     'refreshToken=',
     'HttpOnly',
@@ -51,7 +32,6 @@ function clearRefreshCookie(
     'Max-Age=0',
     'Expires=Thu, 01 Jan 1970 00:00:00 GMT',
   ];
-  if (cookieDomain) parts.push(`Domain=${cookieDomain}`);
   if (secure) parts.push('Secure');
   reply.header('Set-Cookie', parts.join('; '));
 }
@@ -59,7 +39,6 @@ function clearRefreshCookie(
 export async function authRoutes(app: FastifyInstance) {
   const limiter = new InMemoryRateLimiter();
   const maxAge = getRefreshCookieMaxAge();
-  const cookieDomain = getCookieDomain(app.env.PUBLIC_API_URL);
   const loginCfg = {
     max: app.env.AUTH_RATE_LIMIT_LOGIN_MAX,
     windowSec: app.env.AUTH_RATE_LIMIT_LOGIN_WINDOW_SEC,
@@ -113,7 +92,7 @@ export async function authRoutes(app: FastifyInstance) {
     }
     limiter.reset(loginKey);
     const secure = shouldUseSecureCookie(request);
-    setRefreshCookie(reply, result.refreshToken, maxAge, secure, cookieDomain);
+    setRefreshCookie(reply, result.refreshToken, maxAge, secure);
     return reply.send({ ok: true, data: { accessToken: result.accessToken, user: result.user } });
   });
 
@@ -146,7 +125,7 @@ export async function authRoutes(app: FastifyInstance) {
     const result = await app.authService.refresh(token);
     if ('error' in result) {
       const secure = shouldUseSecureCookie(request);
-      clearRefreshCookie(reply, secure, cookieDomain);
+      clearRefreshCookie(reply, secure);
       return reply.code(401).send({
         ok: false,
         error: { code: ErrorCode.UNAUTHORIZED, message: 'Invalid or expired refresh token' },
@@ -154,7 +133,7 @@ export async function authRoutes(app: FastifyInstance) {
     }
     limiter.reset(refreshKey);
     const secure = shouldUseSecureCookie(request);
-    setRefreshCookie(reply, result.refreshToken, maxAge, secure, cookieDomain);
+    setRefreshCookie(reply, result.refreshToken, maxAge, secure);
     return reply.send({ ok: true, data: { accessToken: result.accessToken, user: result.user } });
   });
 
@@ -162,7 +141,7 @@ export async function authRoutes(app: FastifyInstance) {
     const token = getRefreshFromCookie(request);
     if (token) await app.authService.logout(token);
     const secure = shouldUseSecureCookie(request);
-    clearRefreshCookie(reply, secure, cookieDomain);
+    clearRefreshCookie(reply, secure);
     return reply.send({ ok: true, data: {} });
   });
 }
