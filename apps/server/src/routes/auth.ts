@@ -117,6 +117,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     const token = getRefreshFromCookie(request);
     if (!token) {
+      app.log.info({ hasCookie: !!request.headers.cookie }, 'Refresh 401: missing token');
       return reply.code(401).send({
         ok: false,
         error: { code: ErrorCode.UNAUTHORIZED, message: 'Missing refresh token' },
@@ -124,6 +125,7 @@ export async function authRoutes(app: FastifyInstance) {
     }
     const result = await app.authService.refresh(token);
     if ('error' in result) {
+      app.log.info('Refresh 401: invalid or expired token');
       const secure = shouldUseSecureCookie(request);
       clearRefreshCookie(reply, secure);
       return reply.code(401).send({
