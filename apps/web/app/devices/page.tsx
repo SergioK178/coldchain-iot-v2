@@ -17,7 +17,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { StatusIndicator, getDeviceStatus } from '@/components/StatusIndicator';
 import { Input } from '@/components/ui/input';
-import { apiGet } from '@/lib/api';
+import { apiGet, formatApiError } from '@/lib/api';
 import { useI18n } from '@/components/I18nProvider';
 
 type DeviceRow = {
@@ -55,7 +55,7 @@ export default function DevicesPage() {
         const res = await apiGet<DeviceRow[]>('/api/v1/devices');
         setDevices(res.data ?? []);
       } catch (e) {
-        setError(e instanceof Error ? e.message : t('devices_error_load'));
+        setError(formatApiError(e, t));
       } finally {
         setLoading(false);
       }

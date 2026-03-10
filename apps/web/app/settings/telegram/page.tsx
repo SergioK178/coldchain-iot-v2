@@ -4,13 +4,15 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { apiGet, apiPost, apiPatch } from '@/lib/api';
+import { apiGet, apiPost, apiPatch, formatApiError } from '@/lib/api';
+import { useI18n } from '@/components/I18nProvider';
 import { toast } from 'sonner';
 import { ArrowLeft } from 'lucide-react';
 
 type Me = { id: string; email: string; telegramChatId?: string | null };
 
 export default function SettingsTelegramPage() {
+  const { t } = useI18n();
   const [me, setMe] = useState<Me | null>(null);
   const [code, setCode] = useState<string | null>(null);
   const [expiresIn, setExpiresIn] = useState<number | null>(null);
@@ -43,7 +45,7 @@ export default function SettingsTelegramPage() {
       setExpiresIn(res.data.expiresIn);
       toast.success('Код создан. Отправьте его боту в Telegram.');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка');
+      toast.error(formatApiError(e, t));
     } finally {
       setSubmitting(false);
     }
@@ -57,7 +59,7 @@ export default function SettingsTelegramPage() {
       toast.success('Telegram отвязан');
       loadMe();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка');
+      toast.error(formatApiError(e, t));
     } finally {
       setSubmitting(false);
     }
@@ -69,7 +71,7 @@ export default function SettingsTelegramPage() {
       await apiPost('/api/v1/users/me/telegram/test', {});
       toast.success('Тестовое сообщение отправлено в Telegram');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка');
+      toast.error(formatApiError(e, t));
     } finally {
       setTesting(false);
     }

@@ -29,7 +29,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { apiDelete, apiGet, apiPatch, apiPost, proxyFetchRaw } from '@/lib/api';
+import { apiDelete, apiGet, apiPatch, apiPost, proxyFetchRaw, formatApiError } from '@/lib/api';
+import { useI18n } from '@/components/I18nProvider';
 import { toast } from 'sonner';
 
 type Device = {
@@ -86,6 +87,7 @@ type Zone = { id: string; locationId: string; name: string };
 export default function DeviceDetailPage() {
   const params = useParams<{ serial: string }>();
   const router = useRouter();
+  const { t } = useI18n();
   const serial = params?.serial ?? '';
   const [device, setDevice] = useState<Device | null>(null);
   const [readings, setReadings] = useState<Reading[]>([]);
@@ -183,8 +185,7 @@ export default function DeviceDetailPage() {
         setManageZoneId(selectedZoneId);
       } catch (e) {
         if (!cancelled) {
-          const msg = e instanceof Error ? e.message : String(e);
-          setError(msg || 'Ошибка загрузки');
+          setError(formatApiError(e, t));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -428,7 +429,7 @@ export default function DeviceDetailPage() {
                   if (res?.data) setDevice(res.data);
                   toast.success('Привязка обновлена');
                 } catch (err) {
-                  toast.error(err instanceof Error ? err.message : 'Ошибка');
+                  toast.error(formatApiError(err, t));
                 } finally {
                   setManageSubmitting(false);
                 }
@@ -449,7 +450,7 @@ export default function DeviceDetailPage() {
                   setZones([]);
                   toast.success('Устройство отвязано от зоны');
                 } catch (err) {
-                  toast.error(err instanceof Error ? err.message : 'Ошибка');
+                  toast.error(formatApiError(err, t));
                 } finally {
                   setManageSubmitting(false);
                 }
@@ -468,7 +469,7 @@ export default function DeviceDetailPage() {
                   setRotatedMqtt(res?.data?.mqtt ?? null);
                   toast.success('MQTT-пароль обновлён');
                 } catch (err) {
-                  toast.error(err instanceof Error ? err.message : 'Ошибка');
+                  toast.error(formatApiError(err, t));
                 } finally {
                   setManageSubmitting(false);
                 }
@@ -488,7 +489,7 @@ export default function DeviceDetailPage() {
                   router.push('/devices');
                   router.refresh();
                 } catch (err) {
-                  toast.error(err instanceof Error ? err.message : 'Ошибка');
+                  toast.error(formatApiError(err, t));
                 } finally {
                   setManageSubmitting(false);
                 }
@@ -549,8 +550,8 @@ export default function DeviceDetailPage() {
                 const devRes = await apiGet<Device>(`/api/v1/devices/${serial}`);
                 if (devRes?.data) setDevice(devRes.data);
               } catch (err) {
-                setCalFormError(err instanceof Error ? err.message : 'Ошибка');
-                toast.error(err instanceof Error ? err.message : 'Ошибка');
+                setCalFormError(formatApiError(err, t));
+                toast.error(formatApiError(err, t));
               } finally {
                 setCalSubmitting(false);
               }
@@ -638,8 +639,8 @@ export default function DeviceDetailPage() {
                 setAlertRules(Array.isArray(res?.data) ? res.data : []);
                 setRuleThreshold('');
               } catch (err) {
-                setRuleFormError(err instanceof Error ? err.message : 'Ошибка');
-                toast.error(err instanceof Error ? err.message : 'Ошибка');
+                setRuleFormError(formatApiError(err, t));
+                toast.error(formatApiError(err, t));
               } finally {
                 setRuleSubmitting(false);
               }
@@ -726,7 +727,7 @@ export default function DeviceDetailPage() {
                         toast.success('Правило удалено');
                         setAlertRules((prev) => prev.filter((x) => x?.id !== r.id));
                       } catch (err) {
-                        toast.error(err instanceof Error ? err.message : 'Ошибка');
+                        toast.error(formatApiError(err, t));
                       } finally {
                         setRuleSubmitting(false);
                       }

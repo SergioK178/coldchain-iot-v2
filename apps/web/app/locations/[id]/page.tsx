@@ -25,7 +25,8 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { apiGet, apiPost, apiPatch, apiDelete } from '@/lib/api';
+import { apiGet, apiPost, apiPatch, apiDelete, formatApiError } from '@/lib/api';
+import { useI18n } from '@/components/I18nProvider';
 import { toast } from 'sonner';
 
 type Location = { id: string; name: string; address?: string | null };
@@ -33,6 +34,7 @@ type Zone = { id: string; name: string };
 
 export default function LocationDetailPage() {
   const params = useParams();
+  const { t } = useI18n();
   const id = params.id as string;
   const [location, setLocation] = useState<Location | null>(null);
   const [zones, setZones] = useState<Zone[]>([]);
@@ -57,7 +59,7 @@ export default function LocationDetailPage() {
       setLocation(loc ?? null);
       setZones(zonesRes.data ?? []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Ошибка загрузки');
+      setError(formatApiError(e, t));
     } finally {
       setLoading(false);
     }
@@ -78,7 +80,7 @@ export default function LocationDetailPage() {
       setFormName('');
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка');
+      toast.error(formatApiError(e, t));
     } finally {
       setSubmitting(false);
     }
@@ -95,7 +97,7 @@ export default function LocationDetailPage() {
       setSelectedZone(null);
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка');
+      toast.error(formatApiError(e, t));
     } finally {
       setSubmitting(false);
     }
@@ -111,7 +113,7 @@ export default function LocationDetailPage() {
       setSelectedZone(null);
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка');
+      toast.error(formatApiError(e, t));
     } finally {
       setSubmitting(false);
     }

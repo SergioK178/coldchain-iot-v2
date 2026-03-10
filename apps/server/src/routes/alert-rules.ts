@@ -14,7 +14,7 @@ function requireOperator(request: import('fastify').FastifyRequest, reply: impor
   if (role !== 'admin' && role !== 'operator') {
     reply.code(403).send({
       ok: false,
-      error: { code: ErrorCode.FORBIDDEN, message: 'Operator or admin role required' },
+      error: { code: ErrorCode.FORBIDDEN, message: 'Operator or admin role required', messageKey: 'operator_or_admin_required' },
     });
     return false;
   }

@@ -6,7 +6,7 @@ import { MapPin, Layers, Cpu, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { apiGet } from '@/lib/api';
+import { apiGet, formatApiError } from '@/lib/api';
 import { useI18n } from '@/components/I18nProvider';
 import { StatusIndicator, getDeviceStatus } from '@/components/StatusIndicator';
 
@@ -63,7 +63,7 @@ export default function DashboardPage() {
         }
         setZonesByLoc(zones);
       } catch (e) {
-        setError(e instanceof Error ? e.message : t('dashboard_error_load'));
+        setError(formatApiError(e, t));
       } finally {
         setLoading(false);
       }

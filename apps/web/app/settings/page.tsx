@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { apiGet, apiPost, apiPatch, apiDelete } from '@/lib/api';
+import { apiGet, apiPost, apiPatch, apiDelete, formatApiError } from '@/lib/api';
 import { toast } from 'sonner';
 import { useI18n } from '@/components/I18nProvider';
 import { useAuth } from '@/components/AuthGuard';
@@ -74,7 +74,7 @@ export default function SettingsPage() {
       setSiteName(name);
       setSiteNameForm(name);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t('settings_admin_only'));
+      setError(formatApiError(e, t));
     } finally {
       setLoading(false);
     }
@@ -104,7 +104,7 @@ export default function SettingsPage() {
       setUserFormRole('viewer');
       load();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Ошибка';
+      const msg = formatApiError(e, t);
       setUserFormError(msg);
       toast.error(msg);
     } finally {
@@ -120,7 +120,7 @@ export default function SettingsPage() {
       toast.success(t('settings_user_deleted'));
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка');
+      toast.error(formatApiError(e, t));
     } finally {
       setSubmitting(false);
     }
@@ -142,7 +142,7 @@ export default function SettingsPage() {
       setWebhookFormEvents(['alert.triggered']);
       load();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Ошибка';
+      const msg = formatApiError(e, t);
       setWebhookFormError(msg);
       toast.error(msg);
     } finally {
@@ -158,7 +158,7 @@ export default function SettingsPage() {
       toast.success(t('settings_webhook_deleted'));
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка');
+      toast.error(formatApiError(e, t));
     } finally {
       setSubmitting(false);
     }
@@ -169,7 +169,7 @@ export default function SettingsPage() {
       await apiPost(`/api/v1/webhooks/${webhookId}/test`, {});
       toast.success('Тестовое событие отправлено');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка');
+      toast.error(formatApiError(e, t));
     }
   };
 
@@ -203,7 +203,7 @@ export default function SettingsPage() {
       toast.success('Название сохранено');
       window.dispatchEvent(new Event('site-name-updated'));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка');
+      toast.error(formatApiError(e, t));
     } finally {
       setSiteNameSubmitting(false);
     }
@@ -271,7 +271,7 @@ export default function SettingsPage() {
                       <TableRow key={u.id}>
                         <TableCell className="font-medium">{u.email}</TableCell>
                         <TableCell>{u.name ?? '—'}</TableCell>
-                        <TableCell><Badge>{u.role}</Badge></TableCell>
+                        <TableCell><Badge>{['admin','operator','viewer'].includes(u.role) ? t(`role_${u.role}`) : u.role}</Badge></TableCell>
                         <TableCell>
                           <Button variant="ghost" size="icon" onClick={() => handleDeleteUser(u.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                         </TableCell>
@@ -332,7 +332,7 @@ export default function SettingsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('settings_new_user')}</DialogTitle>
-            <DialogDescription>{t('settings_new_user_desc')}</DialogDescription>
+            <DialogDescription>{t('settings_new_user_desc', { role_default: t('role_viewer') })}</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateUser}>
             <div className="grid gap-4 py-4">
@@ -356,9 +356,9 @@ export default function SettingsPage() {
                   value={userFormRole}
                   onChange={(e) => setUserFormRole(e.target.value as 'admin' | 'operator' | 'viewer')}
                 >
-                  <option value="viewer">viewer</option>
-                  <option value="operator">operator</option>
-                  <option value="admin">admin</option>
+                  <option value="viewer">{t('role_viewer')}</option>
+                  <option value="operator">{t('role_operator')}</option>
+                  <option value="admin">{t('role_admin')}</option>
                 </select>
               </div>
             </div>

@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { apiGet, apiPatch } from '@/lib/api';
+import { apiGet, apiPatch, formatApiError } from '@/lib/api';
 import { toast } from 'sonner';
 import { useI18n } from '@/components/I18nProvider';
 import { MessageCircle } from 'lucide-react';
@@ -80,7 +80,7 @@ export default function AlertsPage() {
       const res = await apiGet<AlertEvent[]>(`/api/v1/alert-events?${params.toString()}`);
       setAlerts(res.data ?? []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t('alerts_error_load'));
+      setError(formatApiError(e, t));
     } finally {
       setLoading(false);
     }
@@ -102,7 +102,7 @@ export default function AlertsPage() {
       toast.success(t('alerts_event_acknowledged'));
       loadAlerts();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t('common_error'));
+      toast.error(formatApiError(e, t));
     } finally {
       setAckIng(null);
     }

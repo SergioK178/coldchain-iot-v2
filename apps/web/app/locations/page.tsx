@@ -24,7 +24,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { apiGet, apiPost, apiPatch, apiDelete } from '@/lib/api';
+import { apiGet, apiPost, apiPatch, apiDelete, formatApiError } from '@/lib/api';
 import { toast } from 'sonner';
 import { useI18n } from '@/components/I18nProvider';
 
@@ -56,7 +56,7 @@ export default function LocationsPage() {
       setLocations(locRes.data ?? []);
       setDevices(devRes.data ?? []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t('dashboard_error_load'));
+      setError(formatApiError(e, t));
     } finally {
       setLoading(false);
     }
@@ -78,7 +78,7 @@ export default function LocationsPage() {
       setFormAddress('');
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t('common_error'));
+      toast.error(formatApiError(e, t));
     } finally {
       setSubmitting(false);
     }
@@ -95,7 +95,7 @@ export default function LocationsPage() {
       setSelected(null);
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t('common_error'));
+      toast.error(formatApiError(e, t));
     } finally {
       setSubmitting(false);
     }
@@ -111,7 +111,7 @@ export default function LocationsPage() {
       setSelected(null);
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t('common_error'));
+      toast.error(formatApiError(e, t));
     } finally {
       setSubmitting(false);
     }

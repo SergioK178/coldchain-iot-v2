@@ -27,7 +27,7 @@ function requireAdmin(request: import('fastify').FastifyRequest, reply: import('
   if (!u || u.role !== 'admin') {
     reply.code(403).send({
       ok: false,
-      error: { code: ErrorCode.FORBIDDEN, message: 'Admin role required' },
+      error: { code: ErrorCode.FORBIDDEN, message: 'Admin role required', messageKey: 'admin_required' },
     });
     return false;
   }

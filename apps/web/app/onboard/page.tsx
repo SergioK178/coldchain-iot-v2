@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { apiGet, apiPost, ApiError } from '@/lib/api';
+import { apiGet, apiPost, ApiError, formatApiError } from '@/lib/api';
 import { toast } from 'sonner';
 import { QrScanner } from '@/components/QrScanner';
 import { useI18n } from '@/components/I18nProvider';
@@ -172,11 +172,11 @@ export default function OnboardPage() {
       router.refresh();
       setStep(3);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Ошибка';
       const code = err instanceof ApiError ? err.code : undefined;
       setErrorCode(code ?? null);
-      setFormError(getErrorMessage(code));
-      toast.error(getErrorMessage(code));
+      const msg = err instanceof ApiError && err.messageKey ? formatApiError(err, t) : getErrorMessage(code);
+      setFormError(msg);
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }

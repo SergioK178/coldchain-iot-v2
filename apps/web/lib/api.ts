@@ -2,11 +2,23 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public status?: number,
-    public code?: string
+    public code?: string,
+    public messageKey?: string
   ) {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+/** Returns localized error message for display. Use with useI18n().t */
+export function formatApiError(err: unknown, t: (key: string) => string): string {
+  if (err instanceof ApiError && err.messageKey) {
+    const key = `error_${err.messageKey}`;
+    const translated = t(key);
+    return translated !== key ? translated : err.message;
+  }
+  if (err instanceof Error) return err.message;
+  return t('common_error');
 }
 
 let onUnauthorized: (() => void) | null = null;
@@ -74,7 +86,12 @@ async function proxyFetch(path: string, options: { method?: string; body?: unkno
     }
   }
 
-  throw new ApiError(data?.error?.message ?? 'Request failed', res.status, data?.error?.code);
+  throw new ApiError(
+    data?.error?.message ?? 'Request failed',
+    res.status,
+    data?.error?.code,
+    data?.error?.messageKey
+  );
 }
 
 export async function apiGet<T = unknown>(path: string): Promise<{ ok: true; data: T }> {

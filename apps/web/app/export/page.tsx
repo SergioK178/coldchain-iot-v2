@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { apiGet, proxyFetchRaw } from '@/lib/api';
+import { apiGet, proxyFetchRaw, formatApiError } from '@/lib/api';
+import { useI18n } from '@/components/I18nProvider';
 import { toast } from 'sonner';
 
 type Device = { serial: string; displayName: string | null };
@@ -13,6 +14,7 @@ type Location = { id: string; name: string };
 type Zone = { id: string; name: string; locationId: string };
 
 export default function ExportPage() {
+  const { t } = useI18n();
   const [devices, setDevices] = useState<Device[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [zones, setZones] = useState<Zone[]>([]);
@@ -100,7 +102,8 @@ export default function ExportPage() {
       const contentType = res.headers.get('content-type') || '';
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        toast.error(data?.error?.message ?? 'Ошибка экспорта');
+        const msg = data?.error?.messageKey ? t(`error_${data.error.messageKey}`) : (data?.error?.message ?? t('export_error'));
+        toast.error(msg);
         return;
       }
       if (contentType.includes('text/csv')) {
@@ -124,10 +127,11 @@ export default function ExportPage() {
         toast.success('PDF скачан');
       } else {
         const data = await res.json().catch(() => ({}));
-        toast.error(data?.error?.message ?? 'Экспорт не выполнен');
+        const msg = data?.error?.messageKey ? t(`error_${data.error.messageKey}`) : (data?.error?.message ?? t('export_error'));
+        toast.error(msg);
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ошибка');
+      toast.error(formatApiError(e, t));
     } finally {
       setDownloading(null);
     }
