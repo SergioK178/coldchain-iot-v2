@@ -14,6 +14,11 @@ const nunito = Nunito({
 export const metadata: Metadata = {
   title: 'Снежок колдчейн',
   description: 'Sensor platform',
+  icons: {
+    icon: '/icon.svg',
+    shortcut: '/icon.svg',
+    apple: '/icon.svg',
+  },
 };
 
 export const viewport: Viewport = {
