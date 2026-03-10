@@ -2,10 +2,20 @@ const API_URL = process.env.API_URL || 'http://localhost:8080';
 
 type RefreshResult = {
   accessToken?: string;
-  refreshSetCookie?: string | null;
+  refreshSetCookies: string[];
 };
 
 const refreshInflight = new Map<string, Promise<RefreshResult>>();
+
+function extractSetCookies(headers: Headers): string[] {
+  const withMethod = headers as Headers & { getSetCookie?: () => string[] };
+  if (typeof withMethod.getSetCookie === 'function') {
+    const values = withMethod.getSetCookie();
+    if (values.length > 0) return values;
+  }
+  const single = headers.get('set-cookie');
+  return single ? [single] : [];
+}
 
 function extractRefreshToken(rawCookie: string): string | null {
   const m = rawCookie.match(/(?:^|;\s*)refreshToken=([^;]+)/);
@@ -26,12 +36,10 @@ async function runRefresh(cookie: string, forwardedProto?: string | null): Promi
   }
 
   const refreshData = await refreshRes.json().catch(() => null);
-  // Fetch API hides Set-Cookie (forbidden header); use getSetCookie() in Node.js
-  const setCookies = 'getSetCookie' in refreshRes.headers ? (refreshRes.headers as Headers & { getSetCookie(): string[] }).getSetCookie() : [];
-  const refreshSetCookie = setCookies[0] ?? null;
+  const refreshSetCookies = extractSetCookies(refreshRes.headers);
   return {
     accessToken: refreshData?.data?.accessToken as string | undefined,
-    refreshSetCookie,
+    refreshSetCookies,
   };
 }
 
@@ -61,11 +69,11 @@ export async function POST(request: Request) {
     );
   }
   const accessToken = refresh.accessToken;
-  const refreshSetCookie = refresh.refreshSetCookie;
+  const refreshSetCookies = refresh.refreshSetCookies;
 
   if (!accessToken) {
     const headers = new Headers();
-    if (refreshSetCookie) headers.set('set-cookie', refreshSetCookie);
+    for (const sc of refreshSetCookies) headers.append('set-cookie', sc);
     return Response.json(
       { ok: false, error: { code: 'UNAUTHORIZED', message: 'Not authenticated' } },
       { status: 401, headers },
@@ -115,14 +123,14 @@ export async function POST(request: Request) {
     res = await fetch(targetUrl, { method, headers, body });
   } catch {
     const headers = new Headers();
-    if (refreshSetCookie) headers.set('set-cookie', refreshSetCookie);
+    for (const sc of refreshSetCookies) headers.append('set-cookie', sc);
     return Response.json(
       { ok: false, error: { code: 'UPSTREAM_UNAVAILABLE', message: 'Backend API is unavailable' } },
       { status: 503, headers },
     );
   }
   const resHeaders = new Headers();
-  if (refreshSetCookie) resHeaders.set('set-cookie', refreshSetCookie);
+  for (const sc of refreshSetCookies) resHeaders.append('set-cookie', sc);
   const ct = res.headers.get('content-type') || '';
   if (ct.includes('application/json')) {
     const data = await res.json().catch(() => ({ ok: false, error: { code: 'INTERNAL_ERROR', message: 'Invalid JSON response' } }));

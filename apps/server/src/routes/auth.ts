@@ -96,11 +96,22 @@ export async function authRoutes(app: FastifyInstance) {
     return reply.send({ ok: true, data: { accessToken: result.accessToken, user: result.user } });
   });
 
-  function getRefreshFromCookie(request: import('fastify').FastifyRequest): string | undefined {
+  function getRefreshTokensFromCookie(request: import('fastify').FastifyRequest): string[] {
     const raw = request.headers.cookie;
-    if (!raw) return undefined;
-    const m = raw.match(/refreshToken=([^;]+)/);
-    return m ? decodeURIComponent(m[1].trim()) : undefined;
+    if (!raw) return [];
+    const tokens: string[] = [];
+    for (const part of raw.split(';')) {
+      const [name, ...valueParts] = part.trim().split('=');
+      if (name !== 'refreshToken' || valueParts.length === 0) continue;
+      const rawValue = valueParts.join('=').trim();
+      if (!rawValue) continue;
+      try {
+        tokens.push(decodeURIComponent(rawValue));
+      } catch {
+        tokens.push(rawValue);
+      }
+    }
+    return [...new Set(tokens)];
   }
 
   app.post('/api/v1/auth/refresh', async (request, reply) => {
@@ -115,34 +126,42 @@ export async function authRoutes(app: FastifyInstance) {
       });
     }
 
-    const token = getRefreshFromCookie(request);
-    if (!token) {
+    const tokens = getRefreshTokensFromCookie(request);
+    if (tokens.length === 0) {
       app.log.info({ hasCookie: !!request.headers.cookie }, 'Refresh 401: missing token');
       return reply.code(401).send({
         ok: false,
         error: { code: ErrorCode.UNAUTHORIZED, message: 'Missing refresh token' },
       });
     }
-    const result = await app.authService.refresh(token);
-    if ('error' in result) {
-      const reason = 'reason' in result ? result.reason : 'unknown';
-      app.log.info({ reason }, 'Refresh 401: invalid or expired token');
+
+    const reasons: string[] = [];
+    for (const token of tokens) {
+      const result = await app.authService.refresh(token);
+      if ('error' in result) {
+        reasons.push((result as { reason?: string }).reason ?? 'unknown');
+        continue;
+      }
+      limiter.reset(refreshKey);
       const secure = shouldUseSecureCookie(request);
-      clearRefreshCookie(reply, secure);
-      return reply.code(401).send({
-        ok: false,
-        error: { code: ErrorCode.UNAUTHORIZED, message: 'Invalid or expired refresh token' },
-      });
+      setRefreshCookie(reply, result.refreshToken, maxAge, secure);
+      return reply.send({ ok: true, data: { accessToken: result.accessToken, user: result.user } });
     }
-    limiter.reset(refreshKey);
+
+    app.log.info({ reasons, candidates: tokens.length }, 'Refresh 401: invalid or expired token');
     const secure = shouldUseSecureCookie(request);
-    setRefreshCookie(reply, result.refreshToken, maxAge, secure);
-    return reply.send({ ok: true, data: { accessToken: result.accessToken, user: result.user } });
+    clearRefreshCookie(reply, secure);
+    return reply.code(401).send({
+      ok: false,
+      error: { code: ErrorCode.UNAUTHORIZED, message: 'Invalid or expired refresh token' },
+    });
   });
 
   app.post('/api/v1/auth/logout', async (request, reply) => {
-    const token = getRefreshFromCookie(request);
-    if (token) await app.authService.logout(token);
+    const tokens = getRefreshTokensFromCookie(request);
+    for (const token of tokens) {
+      await app.authService.logout(token);
+    }
     const secure = shouldUseSecureCookie(request);
     clearRefreshCookie(reply, secure);
     return reply.send({ ok: true, data: {} });

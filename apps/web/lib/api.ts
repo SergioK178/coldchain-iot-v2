@@ -38,8 +38,7 @@ export async function proxyFetchRaw(
     });
   let res = await doReq();
   if (res.status === 401) {
-    await fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' });
-    await new Promise((r) => setTimeout(r, 400));
+    await new Promise((r) => setTimeout(r, 200));
     res = await doReq();
     if (res.status === 401) triggerUnauthorized();
   }
@@ -66,9 +65,7 @@ async function proxyFetch(path: string, options: { method?: string; body?: unkno
   if (res.ok) return data;
 
   if (res.status === 401) {
-    // Явный refresh + retry: при ротации токена запрос мог уйти со старым cookie
-    await fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' });
-    await new Promise((r) => setTimeout(r, 400));
+    await new Promise((r) => setTimeout(r, 200));
     const retry = await doProxyRequest(path, options);
     if (retry.res.ok) return retry.data;
     if (retry.res.status === 401 && onUnauthorized && !onUnauthorizedScheduled) {

@@ -1,5 +1,15 @@
 const API_URL = process.env.API_URL || 'http://localhost:8080';
 
+function extractSetCookies(headers: Headers): string[] {
+  const withMethod = headers as Headers & { getSetCookie?: () => string[] };
+  if (typeof withMethod.getSetCookie === 'function') {
+    const values = withMethod.getSetCookie();
+    if (values.length > 0) return values;
+  }
+  const single = headers.get('set-cookie');
+  return single ? [single] : [];
+}
+
 async function proxy(
   path: string[],
   request: Request
@@ -25,8 +35,7 @@ async function proxy(
     );
   }
   const resHeaders = new Headers(res.headers);
-  // Fetch API hides Set-Cookie (forbidden header); use getSetCookie() in Node.js
-  const setCookies = 'getSetCookie' in res.headers ? (res.headers as Headers & { getSetCookie(): string[] }).getSetCookie() : [];
+  const setCookies = extractSetCookies(res.headers);
   for (const sc of setCookies) resHeaders.append('set-cookie', sc);
   return new Response(res.body, {
     status: res.status,
