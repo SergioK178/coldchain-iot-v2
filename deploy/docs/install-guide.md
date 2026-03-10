@@ -95,6 +95,7 @@ curl http://localhost:8080/api/v1/ready
 | Вход не работает (Invalid credentials) | Admin не создан | Задайте `ADMIN_EMAIL` и `ADMIN_PASSWORD` в `.env`, перезапустите server |
 | Вход не работает (cookie) | JWT_SECRET < 64 символов | Увеличьте `JWT_SECRET` до 64+ символов |
 | Backend API недоступен | Контейнер server не healthy | `docker compose logs server` — дождитесь миграций и seed |
+| 401 после входа, переходы по страницам падают | Cookie не устанавливается или не передаётся | Для HTTPS: `AUTH_COOKIE_SECURE=true` в `.env`. Очистите cookie в браузере и войдите заново |
 
 ### Диагностика порта 3000
 

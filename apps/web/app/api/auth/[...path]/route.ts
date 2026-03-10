@@ -8,6 +8,7 @@ async function proxy(
   const url = new URL(`/api/v1/auth/${pathStr}`, API_URL);
   const headers = new Headers(request.headers);
   headers.delete('host');
+  // Cookie и X-Forwarded-Proto пробрасываются для auth и Secure cookie
   const body = request.method !== 'GET' ? await request.text() : undefined;
   let res: Response;
   try {

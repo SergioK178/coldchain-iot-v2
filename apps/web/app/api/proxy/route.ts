@@ -12,12 +12,14 @@ function extractRefreshToken(rawCookie: string): string | null {
   return m ? decodeURIComponent(m[1]) : null;
 }
 
-async function runRefresh(cookie: string): Promise<RefreshResult> {
+async function runRefresh(cookie: string, forwardedProto?: string | null): Promise<RefreshResult> {
+  const headers: Record<string, string> = { cookie };
+  if (forwardedProto) headers['x-forwarded-proto'] = forwardedProto;
   let refreshRes: Response;
   try {
     refreshRes = await fetch(`${API_URL}/api/v1/auth/refresh`, {
       method: 'POST',
-      headers: { cookie },
+      headers,
     });
   } catch {
     throw new Error('UPSTREAM_UNAVAILABLE');
@@ -33,11 +35,11 @@ async function runRefresh(cookie: string): Promise<RefreshResult> {
   };
 }
 
-async function refreshWithSingleFlight(cookie: string): Promise<RefreshResult> {
+async function refreshWithSingleFlight(cookie: string, forwardedProto?: string | null): Promise<RefreshResult> {
   const key = extractRefreshToken(cookie) ?? `raw:${cookie}`;
   const existing = refreshInflight.get(key);
   if (existing) return existing;
-  const promise = runRefresh(cookie).finally(() => {
+  const promise = runRefresh(cookie, forwardedProto).finally(() => {
     refreshInflight.delete(key);
   });
   refreshInflight.set(key, promise);
@@ -46,11 +48,12 @@ async function refreshWithSingleFlight(cookie: string): Promise<RefreshResult> {
 
 export async function POST(request: Request) {
   const cookie = request.headers.get('cookie') || '';
+  const forwardedProto = request.headers.get('x-forwarded-proto');
 
   // Refresh through backend auth route and rotate refresh cookie if needed.
   let refresh: RefreshResult;
   try {
-    refresh = await refreshWithSingleFlight(cookie);
+    refresh = await refreshWithSingleFlight(cookie, forwardedProto);
   } catch {
     return Response.json(
       { ok: false, error: { code: 'UPSTREAM_UNAVAILABLE', message: 'Backend API is unavailable' } },
