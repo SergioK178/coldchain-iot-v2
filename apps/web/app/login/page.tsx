@@ -18,11 +18,18 @@ function LoginForm() {
   const searchParams = useSearchParams();
 
   const checkHealth = () =>
-    fetch('/api/v1/health', { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((d) => {
-        setHealthOk(d?.ok === true);
-        return d?.ok === true;
+    fetch('/api/v1/ready', { cache: 'no-store' })
+      .then(async (r) => {
+        if (r.ok) {
+          setHealthOk(true);
+          return true;
+        }
+        // Fallback to health endpoint in case ready endpoint is temporarily unavailable
+        const hr = await fetch('/api/v1/health', { cache: 'no-store' });
+        const hd = await hr.json().catch(() => ({}));
+        const ok = hr.ok && hd?.ok === true;
+        setHealthOk(ok);
+        return ok;
       })
       .catch(() => {
         setHealthOk(false);

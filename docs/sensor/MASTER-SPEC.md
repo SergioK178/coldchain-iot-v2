@@ -231,7 +231,8 @@ LWT срабатывает при неожиданном отключении (c
 |----------|--------------|
 | Интервал телеметрии | 60 секунд |
 | Минимальный интервал | 10 секунд |
-| Таймаут offline на сервере | 300 секунд (DEVICE_OFFLINE_TIMEOUT_SEC) |
+| Таймаут offline (battery) | 2100 с (35 мин). DEVICE_OFFLINE_TIMEOUT_BATTERY_SEC |
+| Таймаут offline (mains) | 300 с (5 мин). DEVICE_OFFLINE_TIMEOUT_MAINS_SEC |
 
 ---
 

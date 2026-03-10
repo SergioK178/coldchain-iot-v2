@@ -50,7 +50,10 @@ async function main() {
   // 6. Offline check timer (every 60s)
   const offlineTimer = setInterval(async () => {
     try {
-      const count = await app.deviceService.checkOfflineDevices(env.DEVICE_OFFLINE_TIMEOUT_SEC);
+      const count = await app.deviceService.checkOfflineDevices({
+        batteryTimeoutSec: env.DEVICE_OFFLINE_TIMEOUT_BATTERY_SEC,
+        mainsTimeoutSec: env.DEVICE_OFFLINE_TIMEOUT_MAINS_SEC,
+      });
       if (count > 0) {
         app.log.info({ count }, 'Marked devices offline by timeout');
       }

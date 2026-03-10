@@ -174,19 +174,35 @@ export function createDeviceService(db: Db, audit: AuditService) {
 
     /**
      * Mark devices offline if lastSeenAt > timeout threshold.
+     * Uses powerSource: battery → batteryTimeoutSec, wired/mains → mainsTimeoutSec.
      */
-    async checkOfflineDevices(timeoutSec: number) {
-      const threshold = new Date(Date.now() - timeoutSec * 1000);
-      const stale = await db
-        .select({ id: devices.id, serial: devices.serial })
+    async checkOfflineDevices(opts: {
+      batteryTimeoutSec: number;
+      mainsTimeoutSec: number;
+    }) {
+      const batteryThreshold = new Date(Date.now() - opts.batteryTimeoutSec * 1000);
+      const mainsThreshold = new Date(Date.now() - opts.mainsTimeoutSec * 1000);
+
+      const online = await db
+        .select({
+          id: devices.id,
+          serial: devices.serial,
+          powerSource: devices.powerSource,
+          lastSeenAt: devices.lastSeenAt,
+        })
         .from(devices)
         .where(
           and(
             eq(devices.isOnline, true),
             isNull(devices.decommissionedAt),
-            lt(devices.lastSeenAt, threshold),
           ),
         );
+
+      const stale = online.filter((d) => {
+        if (!d.lastSeenAt) return true;
+        const threshold = d.powerSource === 'battery' ? batteryThreshold : mainsThreshold;
+        return d.lastSeenAt < threshold;
+      });
 
       for (const dev of stale) {
         await db

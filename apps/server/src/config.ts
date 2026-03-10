@@ -17,7 +17,8 @@ const EnvSchema = z.object({
   JWT_SECRET: z.string().min(32),
   ADMIN_EMAIL: z.string().email().optional().or(z.literal('')),
   ADMIN_PASSWORD: z.string().optional().default(''),
-  DEVICE_OFFLINE_TIMEOUT_SEC: z.coerce.number().int().min(60).default(300),
+  DEVICE_OFFLINE_TIMEOUT_BATTERY_SEC: z.coerce.number().int().min(60).default(2100),
+  DEVICE_OFFLINE_TIMEOUT_MAINS_SEC: z.coerce.number().int().min(60).default(300),
   HTTP_HOST: z.string().default('0.0.0.0'),
   HTTP_PORT: z.coerce.number().int().default(8080),
   /** F6 (P2): server POSTs here to trigger auth-sync reload. Required in P2 runtime. */

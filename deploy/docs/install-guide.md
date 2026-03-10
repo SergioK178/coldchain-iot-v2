@@ -45,7 +45,8 @@ MOSQUITTO_RELOAD_URL=http://mqtt:9080/reload
 | `MQTT_PORT` | 1883 | Порт MQTT брокера |
 | `PUBLIC_API_URL` | http://localhost:8080 | Публичный URL API (виден браузеру). Для claim flow — датчики получают mqtt_url от этого хоста. |
 | `MQTT_PUBLIC_URL` | — | Публичный URL MQTT (напр. mqtt://coldchain-service.site:1883). Если пусто — выводится из PUBLIC_API_URL. |
-| `DEVICE_OFFLINE_TIMEOUT_SEC` | 300 | Таймаут офлайн-статуса |
+| `DEVICE_OFFLINE_TIMEOUT_BATTERY_SEC` | 2100 | Таймаут офлайн для battery (35 мин). Для deep sleep с интервалом до 30 мин. |
+| `DEVICE_OFFLINE_TIMEOUT_MAINS_SEC` | 300 | Таймаут офлайн для wired (5 мин). |
 | `WEBHOOK_ALLOWLIST_HOSTS` | — | Comma-separated список разрешённых хостов для webhooks |
 | `TELEGRAM_BOT_TOKEN` | — | Токен бота для Telegram-уведомлений о тревогах (опционально) |
 

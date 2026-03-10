@@ -354,7 +354,7 @@ export default function OnboardPage() {
                 {errorCode === 'DEVICE_ALREADY_PROVISIONED' && (
                   <div className="flex gap-2 flex-wrap">
                     <Button variant="outline" size="sm" asChild>
-                      <Link href={`/devices/${serial.trim()}`}>Открыть карточку устройства</Link>
+                      <Link href={`/devices/${serial.trim()}`}>{t('onboard_open_device')}</Link>
                     </Button>
                     <Button variant="outline" size="sm" onClick={() => { setFormError(''); setErrorCode(null); setStep(1); }}>
                       Ввести другой serial
@@ -556,20 +556,20 @@ export default function OnboardPage() {
               {deviceOnline === null ? (
                 <>
                   <div className="h-3 w-3 rounded-full bg-muted-foreground animate-pulse" />
-                  <span className="text-sm text-muted-foreground">Проверка статуса...</span>
+                  <span className="text-sm text-muted-foreground">{t('onboard_checking')}</span>
                 </>
               ) : deviceOnline ? (
                 <>
                   <div className="h-3 w-3 rounded-full bg-green-500" />
                   <span className="text-sm font-medium text-green-700 dark:text-green-400">
-                    Устройство онлайн — telemetry получена!
+                    {t('onboard_device_online')}
                   </span>
                 </>
               ) : (
                 <>
                   <div className="h-3 w-3 rounded-full bg-muted-foreground animate-pulse" />
                   <span className="text-sm text-muted-foreground">
-                    Устройство ещё не подключилось. Ожидание...
+                    {t('onboard_device_waiting')}
                   </span>
                 </>
               )}
@@ -577,14 +577,14 @@ export default function OnboardPage() {
             <div className="flex gap-2 flex-wrap">
               {deviceOnline && (
                 <Button onClick={() => router.push(`/devices/${provisionedSerial}`)}>
-                  Открыть карточку устройства
+                  {t('onboard_open_device')}
                 </Button>
               )}
               <Button variant="outline" onClick={resetForm}>
-                Добавить ещё одно устройство
+                {t('onboard_add_another')}
               </Button>
               <Button variant="outline" onClick={() => router.push('/devices')}>
-                К списку устройств
+                {t('onboard_to_list')}
               </Button>
             </div>
           </CardContent>
