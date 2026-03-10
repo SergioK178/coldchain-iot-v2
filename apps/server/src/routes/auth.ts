@@ -125,7 +125,8 @@ export async function authRoutes(app: FastifyInstance) {
     }
     const result = await app.authService.refresh(token);
     if ('error' in result) {
-      app.log.info('Refresh 401: invalid or expired token');
+      const reason = 'reason' in result ? result.reason : 'unknown';
+      app.log.info({ reason }, 'Refresh 401: invalid or expired token');
       const secure = shouldUseSecureCookie(request);
       clearRefreshCookie(reply, secure);
       return reply.code(401).send({

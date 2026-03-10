@@ -68,15 +68,19 @@ export function createAuthService(deps: AuthServiceDeps) {
         .from(refreshTokens)
         .where(eq(refreshTokens.tokenHash, hash));
 
-      if (!row || row.expiresAt < new Date()) {
-        if (row) await db.delete(refreshTokens).where(eq(refreshTokens.id, row.id));
-        return { error: 'INVALID_REFRESH' as const };
+      const now = new Date();
+      if (!row) {
+        return { error: 'INVALID_REFRESH' as const, reason: 'NOT_FOUND' as const };
+      }
+      if (row.expiresAt < now) {
+        await db.delete(refreshTokens).where(eq(refreshTokens.id, row.id));
+        return { error: 'INVALID_REFRESH' as const, reason: 'EXPIRED' as const };
       }
 
       const [user] = await db.select().from(users).where(eq(users.id, row.userId));
       if (!user) {
         await db.delete(refreshTokens).where(eq(refreshTokens.id, row.id));
-        return { error: 'INVALID_REFRESH' as const };
+        return { error: 'INVALID_REFRESH' as const, reason: 'USER_NOT_FOUND' as const };
       }
 
       await db.delete(refreshTokens).where(eq(refreshTokens.id, row.id));

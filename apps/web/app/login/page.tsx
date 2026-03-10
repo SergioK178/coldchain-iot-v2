@@ -14,6 +14,7 @@ function LoginForm() {
   const [error, setError] = useState('');
   const [healthOk, setHealthOk] = useState<boolean | null>(null);
   const [healthChecking, setHealthChecking] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const searchParams = useSearchParams();
 
   const checkHealth = () =>
@@ -43,7 +44,9 @@ function LoginForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (submitting) return;
     setError('');
+    setSubmitting(true);
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
@@ -64,12 +67,15 @@ function LoginForm() {
         setError(data.error?.message || 'Ошибка входа');
         return;
       }
+      setSubmitting(false);
       const next = searchParams.get('next');
       const target = next && next.startsWith('/') ? next : '/';
       // Full reload гарантирует, что cookie применён до загрузки защищённых страниц
       window.location.href = target;
     } catch {
       setError('Не удалось подключиться к API. Проверьте сеть и контейнеры.');
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -133,9 +139,10 @@ function LoginForm() {
               )}
               <Button
                 type="submit"
+                disabled={submitting}
                 className="w-full h-12 rounded-xl font-bold text-base bg-gradient-to-br from-primary to-[hsl(211,86%,65%)] hover:from-[hsl(211,67%,50%)] hover:to-primary hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/30 transition-all"
               >
-                Войти
+                {submitting ? 'Вход...' : 'Войти'}
               </Button>
             </form>
 
